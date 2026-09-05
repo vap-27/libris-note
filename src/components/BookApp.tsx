@@ -373,7 +373,10 @@ export default function BookApp() {
 
   // Load (or seed) the last-accessed stamp client-side only.
   // Stored identity + guest draft also resolve here (never during render).
+  // Intentional mount-only external-store sync (localStorage is unavailable
+  // during SSR — lazy useState init here caused a hydration crash).
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIdentity(loadIdentity())
     setGuestDraft(freshGuestIdentity())
     try {
