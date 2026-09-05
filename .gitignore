@@ -1,0 +1,64 @@
+# Dependencies
+node_modules/
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# Next.js Build Output
+/.next/
+/out/
+/build/
+
+# Testing & Coverage
+/coverage/
+
+# Environment Files & Secrets (NEVER commit secrets!)
+.env
+.env*.local
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.vault
+.env*
+!.env.example
+
+# Vercel Project State
+.vercel/
+
+# TypeScript & Cache
+*.tsbuildinfo
+next-env.d.ts
+
+# Logs & Debugging
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+dev.log
+dev.out.log
+server.log
+
+# Temporary & Local Configs
+local-*
+test/
+prompt/
+scratch/
+.DS_Store
+Thumbs.db
+*.pem
+*.key
+*.cert
+.claude/
+/skills/
+
+# Generated Prisma Clients & Engine Binaries
+src/generated/
+*.node
+query_engine*
+

@@ -1,0 +1,51 @@
+// Notes Cluster — TiDB cluster B (port 4001, database: notes_db)
+// Stores margin notes attached to book pages AND the sticky-note board.
+// Deliberately a separate cluster/database from books_db so notes and
+// books data live in independent TiDB deployments.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/notes-client"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("NOTES_DATABASE_URL")
+}
+
+// Notes written inside the book, attached to a specific page.
+model PageNote {
+  id         String    @id @default(cuid())
+  bookId     String    @db.VarChar(191)
+  pageId     String    @db.VarChar(191)
+  pageNumber Int
+  content    String    @db.Text
+  color      String    @default("amber") @db.VarChar(32)
+  /// Soft delete: notes can be reverted (restored) from the trash.
+  deletedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([bookId, pageNumber])
+}
+
+// Sticky notes / text-box notes on the cork board.
+model BoardNote {
+  id        String   @id @default(cuid())
+  content   String   @db.Text
+  color     String   @default("amber") @db.VarChar(32)
+  type      String   @default("sticky") @db.VarChar(32)
+  x         Float    @default(120)
+  y         Float    @default(120)
+  width     Int      @default(240)
+  height    Int      @default(240)
+  rotation  Float    @default(0)
+  z         Int      @default(0)
+  /// Pinned notes cannot be dragged around the board, but they can still
+  /// be written on. Unpinned (default) notes move anywhere.
+  pinned    Boolean  @default(false)
+  /// Soft delete: notes can be reverted (restored) from the trash.
+  deletedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

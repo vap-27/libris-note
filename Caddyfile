@@ -1,0 +1,33 @@
+# Libris — hardened Caddy front (C-2, M-8 fixes).
+#
+# - Binds loopback only: never expose :81 to a network.
+# - No query-controlled upstream (removes localhost SSRF/port-scan).
+# - Single pinned upstream (Next.js on 3000).
+# - No response headers: Next.js (next.config.ts) is the single header layer.
+#
+# For public hosting use a real hostname with Automatic HTTPS, e.g.:
+#   libris.example.com {
+#     reverse_proxy 127.0.0.1:3000
+#     # NOTE: do NOT re-add CSP here — next.config.ts already sends the
+#     # enforced policy, and script-src MUST keep 'unsafe-inline' for the
+#     # Next.js inline bootstrap (a copy-pasted strict policy breaks the app).
+#     header {
+#       Strict-Transport-Security "max-age=31536000; includeSubDomains"
+#     }
+#   }
+
+127.0.0.1:81 {
+	handle {
+		reverse_proxy 127.0.0.1:3000 {
+			header_up Host {host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	# No security headers here on purpose (Wave E): Next.js owns the single
+	# header layer (next.config.ts, incl. prod CSP). Duplicated CSP /
+	# X-Frame-Options across layers get ANDed by browsers and drift apart —
+	# worse than one authoritative source. This listener stays loopback-only.
+}

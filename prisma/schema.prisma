@@ -1,0 +1,47 @@
+// Books Cluster — TiDB cluster A (port 4000, database: books_db)
+// Stores the book catalog and all book page content.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/books-client"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("BOOKS_DATABASE_URL")
+}
+
+model Book {
+  id          String   @id @default(cuid())
+  title       String   @db.VarChar(255)
+  subtitle    String?  @db.VarChar(255)
+  author      String   @db.VarChar(255)
+  description String?  @db.Text
+  coverTheme  String   @default("emerald") @db.VarChar(64)
+  /// Last page the reader had open (restored when the book is reopened).
+  lastPage    Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Page {
+  id         String   @id @default(cuid())
+  bookId     String   @db.VarChar(191)
+  pageNumber Int
+  chapter    Int      @default(1)
+  section    String   @db.VarChar(255)
+  title      String   @db.VarChar(255)
+  content    String   @db.Text
+  /// Pinned pages are kept even when empty (never auto-removed).
+  pinned     Boolean  @default(false)
+  /// Soft delete (tombstone): deleted pages stay out of reads/merges and
+  /// are only resurrected by an explicit forced restore. Negated pageNumber
+  /// keeps the @@unique slot free for live rows (see DELETE route).
+  deletedAt  DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([bookId, pageNumber])
+  @@index([bookId, section])
+  @@index([bookId, deletedAt, pageNumber])
+}

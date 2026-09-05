@@ -1,0 +1,50 @@
+// Users store — third TiDB cluster (`sys` database): claimed display names
+// (+ PIN hashes), presence heartbeats, and advisory page edit leases.
+// Replaces the old Turso-backed UsrInfo database; Turso is fully
+// decommissioned. Table names mirror the old libSQL layout 1:1.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/users-client"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("USERS_DATABASE_URL")
+}
+
+model Identity {
+  name      String   @id
+  pinHash   String
+  salt      String
+  color     String
+  createdAt DateTime @default(now())
+
+  @@map("identities")
+}
+
+model Presence {
+  clientId  String
+  tabId     String
+  name      String
+  color     String
+  pageId    String?
+  activity  String   @default("viewing") @db.VarChar(32)
+  updatedAt DateTime @updatedAt
+
+  @@id([clientId, tabId])
+  @@index([updatedAt])
+  @@map("presence")
+}
+
+model PageLock {
+  pageId    String   @id
+  clientId  String
+  name      String
+  color     String
+  updatedAt DateTime @updatedAt
+
+  @@index([updatedAt])
+  @@index([clientId])
+  @@map("page_locks")
+}

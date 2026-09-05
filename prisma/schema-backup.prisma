@@ -1,0 +1,105 @@
+// Backup Engine — CockroachDB (PostgreSQL wire protocol).
+// Replaces the old Turso backup database: snapshots, restore source, shift
+// overflow writes, replication mirror, and activity logs all live here.
+// Table names mirror the old Turso layout via @@map so data migration is 1:1.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/backup-client"
+}
+
+datasource db {
+  provider = "cockroachdb"
+  url      = env("BACKUP_DATABASE_URL")
+}
+
+model BackupBook {
+  id          String   @id
+  title       String
+  subtitle    String?
+  author      String
+  description String?
+  coverTheme  String   @default("emerald")
+  lastPage    Int      @default(1)
+  createdAt   DateTime
+  updatedAt   DateTime
+
+  // No deletedAt by design: books are never soft-deleted (only pages and
+  // notes tombstone). A deleted book row would orphan its pages.
+  @@map("books")
+}
+
+model BackupPage {
+  id         String    @id
+  bookId     String
+  pageNumber Int
+  chapter    Int       @default(1)
+  section    String
+  title      String
+  content    String
+  pinned     Boolean   @default(false)
+  deletedAt  DateTime?
+  createdAt  DateTime
+  updatedAt  DateTime
+
+  @@unique([bookId, pageNumber])
+  @@index([bookId, section])
+  @@index([bookId, deletedAt, pageNumber])
+  @@map("pages")
+}
+
+model BackupPageNote {
+  id         String    @id
+  bookId     String
+  pageId     String
+  pageNumber Int
+  content    String
+  color      String    @default("amber")
+  deletedAt  DateTime?
+  createdAt  DateTime
+  updatedAt  DateTime
+
+  @@index([bookId, pageNumber])
+  @@map("page_notes")
+}
+
+model BackupBoardNote {
+  id        String    @id
+  content   String
+  color     String    @default("amber")
+  type      String    @default("sticky")
+  x         Float     @default(120)
+  y         Float     @default(120)
+  width     Int       @default(240)
+  height    Int       @default(240)
+  rotation  Float     @default(0)
+  z         Int       @default(0)
+  pinned    Boolean   @default(false)
+  deletedAt DateTime?
+  createdAt DateTime
+  updatedAt DateTime
+
+  @@map("board_notes")
+}
+
+model SystemLog {
+  id            String @id
+  timestamp     String
+  timeFormatted String
+  action        String
+  title         String
+  details       String
+  engine        String
+  level         String
+
+  @@index([timestamp])
+  @@map("system_logs")
+}
+
+model BackupMeta {
+  key       String @id
+  value     String
+  updatedAt String
+
+  @@map("backup_meta")
+}
