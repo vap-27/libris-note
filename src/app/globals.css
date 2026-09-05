@@ -3496,6 +3496,12 @@ mark.ink-hl-charcoal { background-color: rgba(68, 64, 60, 0.85); color: #f5f0e6;
   gap: 10px;
   margin-top: 6px;
 }
+/* Full-width stacked gate buttons: keep icon + label together, centered. */
+.confirm-row .confirm-remove,
+.confirm-row .confirm-cancel {
+  justify-content: center;
+  text-align: center;
+}
 .confirm-cancel {
   padding: 10px 18px;
   border-radius: 999px;
