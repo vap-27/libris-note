@@ -20,11 +20,14 @@
  * is safe — the query-engine binaries and schema.prisma annotations at the
  * bottom of index.js keep working and stay traced via their static joins.
  *
- * `serverExternalPackages` cannot cover these files (that option only matches
- * `node_modules/<pkg>/` paths, while our clients live in `src/generated/`),
- * and `outputFileTracingExcludes` only post-filters .nft.json files — worse,
- * excluding the clients there would drop the query-engine binaries from
- * standalone traces and break production. Hence this patch.
+  * `serverExternalPackages` cannot cover these files (that option only matches
+  * `node_modules/<pkg>/` paths, while our clients live in `src/generated/`),
+  * and `outputFileTracingExcludes` only post-filters .nft.json files — worse,
+  * excluding the clients there would drop the query-engine binaries from
+  * standalone traces and break production. Hence this patch.
+  *
+  * Lives in `prisma/` (not `scripts/`) because `.vercelignore` excludes
+  * `scripts/` from deployments while `postinstall` must run this file.
  *
  * The markers are lost every time `prisma generate` rewrites the clients, so
  * this script is chained after every generate invocation in package.json
