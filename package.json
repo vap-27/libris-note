@@ -32,7 +32,7 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^5.1.1",
-    "@prisma/client": "^6.11.1",
+    "@prisma/client": "6.19.3",
     "@radix-ui/react-accordion": "^1.2.11",
     "@radix-ui/react-alert-dialog": "^1.1.14",
     "@radix-ui/react-aspect-ratio": "^1.1.7",
@@ -74,7 +74,7 @@
     "mysql2": "^3.24.3",
     "next": "^16.1.1",
     "next-themes": "^0.4.6",
-    "prisma": "^6.11.1",
+    "prisma": "6.19.3",
     "react": "^19.0.0",
     "react-day-picker": "^9.8.0",
     "react-dom": "^19.0.0",

@@ -31,6 +31,11 @@
  * (postinstall, vercel-build, db:generate, db:push, db:push:backup) and is
  * idempotent (safe to run repeatedly).
  *
+ * Deliberately NON-FATAL: if a future Prisma version changes the template so
+ * the patterns no longer match, this prints a loud warning and exits 0.
+ * Failing would break `postinstall` → `npm install` → the whole deploy, and
+ * these markers only suppress build warnings (cosmetic), never correctness.
+ *
  * This file is intentionally `.mjs` + dependency-free: tsconfig only includes
  * TS source globs (so `tsc --noEmit` ignores it) and eslint ignores scripts.
  */
@@ -67,10 +72,10 @@ for (const client of CLIENTS) {
     if (src.includes(to)) continue; // already patched (idempotent)
     const occurrences = src.split(from).length - 1;
     if (occurrences !== 1) {
-      console.error(
-        `[patch-prisma] expected exactly 1 occurrence of ${JSON.stringify(from)} in ${rel}, found ${occurrences} — leaving untouched`
+      // Non-fatal by design (see header): a template drift must never fail installs.
+      console.warn(
+        `[patch-prisma] WARNING: expected exactly 1 occurrence of ${JSON.stringify(from)} in ${rel}, found ${occurrences} — leaving untouched (warnings may return; update the pattern)`
       );
-      process.exitCode = 1;
       continue;
     }
     writeFileSync(abs, src.replace(from, to));
