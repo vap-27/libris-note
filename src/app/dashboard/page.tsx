@@ -1,6 +1,6 @@
-import { redirect } from 'next/navigation'
+import HealthDashboard from '../health/page'
 
-/** /dashboard is the observability home — the health dashboard. */
-export default function DashboardAlias() {
-  redirect('/health')
+/** /dashboard is the observability home — renders the dashboard first-page directly (no redirect). */
+export default function DashboardPage() {
+  return <HealthDashboard />
 }
