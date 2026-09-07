@@ -1,8 +1,9 @@
 # Libris Changelog
 
-> Complete version history of the 3D Book Notes app. A new minor version for
-> every change batch: `1.x` = foundation, `2.x` = identity + engine migration
-> + honest telemetry, `3.x` = naming cleanup + polish + deploy hardening.
+> Complete version history of the 3D Book Notes app. A new version only for a
+> meaningful change batch — never one-line tweaks. `1.x` = foundation,
+> `2.x` = identity + engine migration + honest telemetry,
+> `3.x` = naming cleanup + polish + deploy hardening.
 
 ---
 
@@ -250,9 +251,3 @@
 - Deploys failed twice shipping this: missing script on Vercel (`Cannot find module …/scripts/…`) — fixed by the move; then a strict exit code — fixed by non-fatal.
 
 ---
-
-## 3.2 — `/dashboard` first page
-
-### Changed
-- `/dashboard` renders the observability dashboard directly as its own first page (200, no redirect through `/health`).
-- `/health` continues to serve the same dashboard.
