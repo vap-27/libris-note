@@ -113,7 +113,7 @@ Libris pairs TiDB Cloud Serverless clusters with a CockroachDB backup engine to 
 - **TiDB Cluster B (`prisma/schema-notes.prisma`)**:
   - `PageNote`: Note text, page number, color, soft-delete timestamp.
   - `BoardNote`: Note text, canvas (x, y, z), type (`sticky` / `card`), color, pin status, soft-delete timestamp.
-- **CockroachDB backup engine (`prisma/schema-backup.prisma`, `src/lib/turso.ts` front)**:
+- **CockroachDB backup engine (`prisma/schema-backup.prisma`, `src/lib/backup-engine.ts` front)**:
   - `system_logs`: Real-time persistent activity logs.
   - `books`, `pages`, `page_notes`, `board_notes`: Snapshot backups & dynamic overflow storage.
 - **UsrInfo store (`src/lib/usrinfo.ts`)**: usernames, PIN claims, presence heartbeats, page leases.

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { dbBooks } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth'
 import { rlWrite } from '@/lib/rate-limit'
-import { withTiDBFallback, tursoUpdateProgress, isNotFoundError } from '@/lib/turso'
+import { withTiDBFallback, updateBackupProgress, isNotFoundError } from '@/lib/backup-engine'
 
 export const dynamic = 'force-dynamic'
 
@@ -51,7 +51,7 @@ export async function PATCH(req: NextRequest) {
         return { ok: true as const, page: stored }
       },
       async () => {
-        const r = await tursoUpdateProgress(page)
+        const r = await updateBackupProgress(page)
         return { ok: true as const, page: r.page }
       },
       'PATCH /api/book/progress',

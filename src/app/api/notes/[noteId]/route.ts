@@ -2,13 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { dbNotes } from '@/lib/db'
 import {
   withTiDBFallback,
-  tursoUpdatePageNote,
-  tursoDeletePageNote,
+  updateBackupPageNote,
+  deleteBackupPageNote,
   replicateNoteUpsert,
   replicatePageNoteDelete,
-  shouldShiftToTurso,
+  shouldShiftToBackup,
   isNotFoundError,
-} from '@/lib/turso'
+} from '@/lib/backup-engine'
 import { logActivity } from '@/lib/logger'
 import { requireAdmin } from '@/lib/auth'
 import { rlWrite } from '@/lib/rate-limit'
@@ -20,7 +20,7 @@ const NOTE_COLORS = ['amber', 'rose', 'sage', 'sky', 'lilac', 'butter']
 /** PATCH /api/notes/[noteId]  { content?, color? }
  * Updates a margin note.
  * Primary: TiDB Notes cluster.
- * Failover: Turso backup database.
+ * Failover: CockroachDB backup database.
  */
 export async function PATCH(
   req: NextRequest,
@@ -72,13 +72,13 @@ export async function PATCH(
         return { note }
       },
       async () => {
-        return await tursoUpdatePageNote(noteId, data)
+        return await updateBackupPageNote(noteId, data)
       },
       `PATCH /api/notes/${noteId}`,
       'notes'
     )
 
-    const isShifted = shouldShiftToTurso('notes')
+    const isShifted = shouldShiftToBackup('notes')
     logActivity({
       action: 'edit',
       title: 'Margin Note Edited',
@@ -95,7 +95,7 @@ export async function PATCH(
     if (isNotFoundError(err)) {
       return NextResponse.json({ error: 'Note not found' }, { status: 404 })
     }
-    console.error('[api/notes/[noteId]] PATCH failed on both TiDB and Turso:', err)
+    console.error('[api/notes/[noteId]] PATCH failed on both TiDB and CockroachDB:', err)
     return NextResponse.json({ error: 'Failed to update note' }, { status: 500 })
   }
 }
@@ -104,7 +104,7 @@ export async function PATCH(
  * DELETE /api/notes/[noteId]
  * Soft-deletes a margin note.
  * Primary: TiDB Notes cluster.
- * Failover: Turso backup database.
+ * Failover: CockroachDB backup database.
  */
 export async function DELETE(
   req: NextRequest,
@@ -135,7 +135,7 @@ export async function DELETE(
         return { note }
       },
       async () => {
-        return await tursoDeletePageNote(noteId)
+        return await deleteBackupPageNote(noteId)
       },
       `DELETE /api/notes/${noteId}`,
       'notes'
@@ -154,7 +154,7 @@ export async function DELETE(
     if (isNotFoundError(err)) {
       return NextResponse.json({ error: 'Note not found' }, { status: 404 })
     }
-    console.error('[api/notes/[noteId]] DELETE failed on both TiDB and Turso:', err)
+    console.error('[api/notes/[noteId]] DELETE failed on both TiDB and CockroachDB:', err)
     return NextResponse.json({ error: 'Failed to delete note' }, { status: 500 })
   }
 }

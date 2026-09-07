@@ -4,11 +4,11 @@ import {
   replicatePageUpsert,
   replicatePageDelete,
   withTiDBFallback,
-  tursoUpdatePage,
-  tursoDeletePage,
-  shouldShiftToTurso,
+  updateBackupPage,
+  deleteBackupPage,
+  shouldShiftToBackup,
   isNotFoundError,
-} from '@/lib/turso'
+} from '@/lib/backup-engine'
 import { listPageLocks } from '@/lib/usrinfo'
 import { SWEEP_MIN_AGE_MS } from '@/lib/identity'
 import { logActivity } from '@/lib/logger'
@@ -27,7 +27,7 @@ function mapNotFound(err: unknown): NextResponse | null {
 
 /**
  * Books cluster (TiDB A) + notes cluster (TiDB B) sync.
- * Automatic failover to Turso backup if TiDB is out of storage or down.
+ * Automatic failover to CockroachDB backup if TiDB is out of storage or down.
  *
  * PATCH /api/pages/[pageId]  { content?, title?, pinned? }
  * Edits a writable book page (autosaved from the ruled paper).
@@ -105,13 +105,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pa
         return { page }
       },
       async () => {
-        return await tursoUpdatePage(pageId, data)
+        return await updateBackupPage(pageId, data)
       },
       `PATCH /api/pages/${pageId}`,
       'books'
     )
 
-    const isShifted = shouldShiftToTurso('books')
+    const isShifted = shouldShiftToBackup('books')
     logActivity({
       action: 'edit',
       title: 'Page Edited',
@@ -124,7 +124,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pa
   } catch (err) {
     const nf = mapNotFound(err)
     if (nf) return nf
-    console.error('[api/pages/:id] PATCH failed on both TiDB and Turso:', err)
+    console.error('[api/pages/:id] PATCH failed on both TiDB and CockroachDB:', err)
     return NextResponse.json({ error: 'Failed to update page' }, { status: 500 })
   }
 }
@@ -140,7 +140,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ p
       return NextResponse.json({ error: 'Invalid page id' }, { status: 400 })
     }
     // Sweep calls (?sweep=1) may only remove pages that are STILL blank and
-    // unpinned on the server — a stale client must never nuke real content.
+    // unpinned on the server Ã¢â‚¬â€ a stale client must never nuke real content.
     // Explicit user removes (confirm dialog) bypass this guard by design.
     const sweepOnly = req.nextUrl.searchParams.get('sweep') === '1'
 
@@ -159,26 +159,26 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ p
             !isBlankHtml(existing.content) ||
             (existing.title ?? '').trim().length !== 0)
         ) {
-          throw new Error('Page is not blank — refusing auto-sweep')
+          throw new Error('Page is not blank Ã¢â‚¬â€ refusing auto-sweep')
         }
 
-        // Cross-device freshness (Wave 1): no sweeper — this device or any
-        // other — may take a page younger than the grace window, so a fresh
+        // Cross-device freshness (Wave 1): no sweeper Ã¢â‚¬â€ this device or any
+        // other Ã¢â‚¬â€ may take a page younger than the grace window, so a fresh
         // page survives even when a second reader already sees it as blank.
         if (
           sweepOnly &&
           Date.now() - existing.createdAt.getTime() < SWEEP_MIN_AGE_MS
         ) {
-          throw new Error('Page is too fresh to sweep — try again later')
+          throw new Error('Page is too fresh to sweep Ã¢â‚¬â€ try again later')
         }
 
         // Soft delete (Wave C): the tombstone parks at a negative number so
         // its unique slot frees up, then live rows above close the gap. The
-        // tombstone itself never renumbers, and merges/restore ignore it —
+        // tombstone itself never renumbers, and merges/restore ignore it Ã¢â‚¬â€
         // deleted pages stay deleted everywhere.
         const deletedAt = new Date()
         await dbBooks.$transaction(async (tx) => {
-          // Tombstone slot must be unique even across delete → recreate →
+          // Tombstone slot must be unique even across delete Ã¢â€ â€™ recreate Ã¢â€ â€™
           // delete cycles of the same number: sink below any existing negative.
           const minAgg = await tx.page.aggregate({
             where: { bookId: existing.bookId, pageNumber: { lt: 0 } },
@@ -199,7 +199,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ p
         return { pages: await listPages(existing.bookId) }
       },
       async () => {
-        return await tursoDeletePage(pageId, sweepOnly ? { sweep: true } : undefined)
+        return await deleteBackupPage(pageId, sweepOnly ? { sweep: true } : undefined)
       },
       `DELETE /api/pages/${pageId}`,
       'books'
@@ -218,15 +218,15 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ p
     if (err?.message === 'The flyleaf cannot be removed') {
       return NextResponse.json({ error: 'The flyleaf cannot be removed' }, { status: 400 })
     }
-    if (err?.message === 'Page is not blank — refusing auto-sweep') {
-      return NextResponse.json({ error: 'Page is not blank — refusing auto-sweep' }, { status: 409 })
+    if (err?.message === 'Page is not blank Ã¢â‚¬â€ refusing auto-sweep') {
+      return NextResponse.json({ error: 'Page is not blank Ã¢â‚¬â€ refusing auto-sweep' }, { status: 409 })
     }
-    if (err?.message === 'Page is too fresh to sweep — try again later') {
-      return NextResponse.json({ error: 'Page is too fresh to sweep — try again later' }, { status: 409 })
+    if (err?.message === 'Page is too fresh to sweep Ã¢â‚¬â€ try again later') {
+      return NextResponse.json({ error: 'Page is too fresh to sweep Ã¢â‚¬â€ try again later' }, { status: 409 })
     }
     const nf = mapNotFound(err)
     if (nf) return nf
-    console.error('[api/pages/:id] DELETE failed on both TiDB and Turso:', err)
+    console.error('[api/pages/:id] DELETE failed on both TiDB and CockroachDB:', err)
     return NextResponse.json({ error: 'Failed to delete page' }, { status: 500 })
   }
 }

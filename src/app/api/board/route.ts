@@ -2,14 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { dbNotes } from '@/lib/db'
 import {
   withTiDBFallback,
-  tursoGetBoardNotes,
-  tursoCreateBoardNote,
-  tursoPurgeBoardTrash,
+  getBackupBoardNotes,
+  createBackupBoardNote,
+  purgeBackupBoardTrash,
   replicateNoteUpsert,
   replicateBoardNotePurge,
   getMergedBoardNotes,
-  shouldShiftToTurso,
-} from '@/lib/turso'
+  shouldShiftToBackup,
+} from '@/lib/backup-engine'
 import { logActivity } from '@/lib/logger'
 import { requireAdmin } from '@/lib/auth'
 import { rlRead, rlWrite, rlDestructive, getIdempotentReplay, setIdempotentReplay, hashBody } from '@/lib/rate-limit'
@@ -21,8 +21,8 @@ export const dynamic = 'force-dynamic'
  * GET /api/board?trash=1
  * Sticky / text-box notes on the board.
  * Primary: Notes cluster.
- * Dynamic Overflow: Merges notes shifted to Turso when TiDB is low on storage.
- * Failover: Turso database.
+ * Dynamic Overflow: Merges notes shifted to CockroachDB when TiDB is low on storage.
+ * Failover: CockroachDB database.
  */
 export async function GET(req: NextRequest) {
   try {
@@ -46,13 +46,13 @@ export async function GET(req: NextRequest) {
           orderBy: [{ z: 'asc' }, { createdAt: 'asc' }],
           ...(limit != null ? { take: limit, skip: offset } : {}),
         })
-        // Pass trash through (P6): without it, Turso non-trash rows leak
+        // Pass trash through (P6): without it, backup non-trash rows leak
         // into the trash view whenever the merge runs.
         const merged = await getMergedBoardNotes(notes, trash)
         return { notes: limit != null ? merged.slice(0, limit) : merged }
       },
       async () => {
-        return await tursoGetBoardNotes(trash)
+        return await getBackupBoardNotes(trash)
       },
       `GET /api/board?trash=${trash ? '1' : '0'}`,
       'notes'
@@ -60,7 +60,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(result)
   } catch (err) {
-    console.error('[api/board] GET failed on both TiDB and Turso:', err)
+    console.error('[api/board] GET failed on both TiDB and CockroachDB:', err)
     return NextResponse.json({ error: 'Failed to load board notes' }, { status: 500 })
   }
 }
@@ -72,7 +72,7 @@ const TYPES = ['sticky', 'card']
  * POST /api/board  { content?, color, type, x, y, width, height, rotation }
  * Creates a new board note.
  * Primary: TiDB Notes cluster.
- * Failover: Turso backup database.
+ * Failover: CockroachDB backup database.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -145,7 +145,7 @@ export async function POST(req: NextRequest) {
         return { note }
       },
       async () => {
-        return await tursoCreateBoardNote({
+        return await createBackupBoardNote({
           content,
           color,
           type,
@@ -160,7 +160,7 @@ export async function POST(req: NextRequest) {
       'notes'
     )
 
-    const isShifted = shouldShiftToTurso('notes')
+    const isShifted = shouldShiftToBackup('notes')
     logActivity({
       action: 'create',
       title: 'Board Note Created',
@@ -172,14 +172,14 @@ export async function POST(req: NextRequest) {
     setIdempotentReplay(idemKey, 201, result, idemHash)
     return NextResponse.json(result, { status: 201 })
   } catch (err) {
-    console.error('[api/board] POST failed on both TiDB and Turso:', err)
+    console.error('[api/board] POST failed on both TiDB and CockroachDB:', err)
     return NextResponse.json({ error: 'Failed to create board note' }, { status: 500 })
   }
 }
 
 /**
  * DELETE /api/board?emptyTrash=1
- * Permanently purges ALL trashed board notes. Explicit flag required —
+ * Permanently purges ALL trashed board notes. Explicit flag required Ã¢â‚¬â€
  * anything else is a 400, so this can never fire by accident.
  */
 export async function DELETE(req: NextRequest) {
@@ -207,7 +207,7 @@ export async function DELETE(req: NextRequest) {
         return { purged: count }
       },
       async () => {
-        return await tursoPurgeBoardTrash()
+        return await purgeBackupBoardTrash()
       },
       'DELETE /api/board?emptyTrash=1',
       'notes'

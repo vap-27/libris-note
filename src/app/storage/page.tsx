@@ -87,7 +87,7 @@ interface StorageData {
       }
     }
   }
-  turso: {
+  backup: {
     label: string
     status: 'online' | 'offline'
     endpoint?: string
@@ -185,7 +185,7 @@ export default function StoragePage() {  const [data, setData] = useState<Storag
     }
   }, [toast])
 
-  // Initial load once on mount — fetches inline so setState only runs in
+  // Initial load once on mount Ã¢â‚¬â€ fetches inline so setState only runs in
   // the async continuation (subscription callback), not synchronously.
   useEffect(() => {
     let cancelled = false
@@ -342,7 +342,7 @@ export default function StoragePage() {  const [data, setData] = useState<Storag
           <div className="relative z-10 max-w-3xl space-y-3">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#d9a93f]/15 border border-[#d9a93f]/30 text-xs font-medium text-[#e4be68]">
               <ShieldCheck size={14} />
-              <span>High Availability Tier · Dual-Write Active</span>
+              <span>High Availability Tier Ã‚Â· Dual-Write Active</span>
             </div>
             <h1 className="text-3xl sm:text-4xl font-serif tracking-tight text-[#fdfaf5]">
               Storage Quotas & Failover Telemetry
@@ -375,7 +375,7 @@ export default function StoragePage() {  const [data, setData] = useState<Storag
                     {data.overall.totalQuotaFormatted}
                   </div>
                   <div className="text-xs text-[#a09582] mt-0.5">
-                    {data.overall.totalUsedFormatted} used · {data.overall.totalAvailableFormatted} free
+                    {data.overall.totalUsedFormatted} used Ã‚Â· {data.overall.totalAvailableFormatted} free
                   </div>
                 </div>
                 <div className="space-y-1">
@@ -387,7 +387,7 @@ export default function StoragePage() {  const [data, setData] = useState<Storag
                   </div>
                   <div className="flex justify-between text-[10px] text-[#786e5e] font-mono">
                     <span>{data.overall.percentUsed}% utilized</span>
-                    <span title={data.overall.quotaNote ?? ''}>TiDB ×3 + CockroachDB</span>
+                    <span title={data.overall.quotaNote ?? ''}>TiDB Ãƒâ€”3 + CockroachDB</span>
                   </div>
                 </div>
               </div>
@@ -408,7 +408,7 @@ export default function StoragePage() {  const [data, setData] = useState<Storag
                     {data.tidb.booksCluster.quotaFormatted}
                   </div>
                   <div className="text-xs text-[#7e99ac] mt-0.5">
-                    {data.tidb.booksCluster.tables.books} books · {data.tidb.booksCluster.tables.pages} pages
+                    {data.tidb.booksCluster.tables.books} books Ã‚Â· {data.tidb.booksCluster.tables.pages} pages
                   </div>
                 </div>
                 <div className="space-y-1">
@@ -420,7 +420,7 @@ export default function StoragePage() {  const [data, setData] = useState<Storag
                   </div>
                   <div className="flex justify-between text-[10px] text-[#5e778a] font-mono">
                     <span>Latency: {data.tidb.booksCluster.latencyMs}ms</span>
-                    <span title="LENGTH()+allowance estimate — TiDB Serverless exposes no billed-size probe">
+                    <span title="LENGTH()+allowance estimate Ã¢â‚¬â€ TiDB Serverless exposes no billed-size probe">
                       {data.tidb.booksCluster.usedFormatted} (est.)
                     </span>
                   </div>
@@ -443,7 +443,7 @@ export default function StoragePage() {  const [data, setData] = useState<Storag
                     {data.tidb.notesCluster.quotaFormatted}
                   </div>
                   <div className="text-xs text-[#a08b7e] mt-0.5">
-                    {data.tidb.notesCluster.tables.pageNotes} margin notes · {data.tidb.notesCluster.tables.boardNotes} board notes
+                    {data.tidb.notesCluster.tables.pageNotes} margin notes Ã‚Â· {data.tidb.notesCluster.tables.boardNotes} board notes
                   </div>
                 </div>
                 <div className="space-y-1">
@@ -455,56 +455,56 @@ export default function StoragePage() {  const [data, setData] = useState<Storag
                   </div>
                   <div className="flex justify-between text-[10px] text-[#7a6456] font-mono">
                     <span>Latency: {data.tidb.notesCluster.latencyMs}ms</span>
-                    <span title="LENGTH()+allowance estimate — TiDB Serverless exposes no billed-size probe">
+                    <span title="LENGTH()+allowance estimate Ã¢â‚¬â€ TiDB Serverless exposes no billed-size probe">
                       {data.tidb.notesCluster.usedFormatted} (est.)
                     </span>
                   </div>
                 </div>
               </div>
 
-              {/* CockroachDB Backup Engine — real measured bytes, honest ceiling */}
+              {/* CockroachDB Backup Engine Ã¢â‚¬â€ real measured bytes, honest ceiling */}
               <div className="rounded-xl border border-[#21352b] bg-[#0c1712]/90 p-5 space-y-3 shadow-lg hover:border-emerald-500/40 transition-colors">
                 <div className="flex items-center justify-between text-xs text-[#8cbca3]">
                   <span className="font-mono uppercase tracking-wider">CockroachDB Failover</span>
                   <span
-                    className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium border ${statusTone(data.turso.status).pill}`}
+                    className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium border ${statusTone(data.backup.status).pill}`}
                   >
-                    <span className={`w-1.5 h-1.5 rounded-full ${statusTone(data.turso.status).dot}`} />
-                    {statusTone(data.turso.status).label}
+                    <span className={`w-1.5 h-1.5 rounded-full ${statusTone(data.backup.status).dot}`} />
+                    {statusTone(data.backup.status).label}
                   </span>
                 </div>
                 <div>
                   <div className="text-2xl font-bold font-serif text-[#f0fbf5]">
-                    {data.turso.bytesMeasured ? data.turso.usedFormatted : 'unmeasured'}
+                    {data.backup.bytesMeasured ? data.backup.usedFormatted : 'unmeasured'}
                   </div>
                   <div
                     className="text-xs text-[#7eaf96] mt-0.5"
                     title="CockroachDB Basic free = org-level $15 credit (50M RUs + 10 GiB/mo shared across all clusters). See Cloud Console for real usage."
                   >
-                    Content bytes (measured) · quota {data.turso.quotaFormatted} (
-                    {data.turso.quotaSource === 'env-override' ? 'operator override' : 'Basic 10 GiB free'})
+                    Content bytes (measured) Ã‚Â· quota {data.backup.quotaFormatted} (
+                    {data.backup.quotaSource === 'env-override' ? 'operator override' : 'Basic 10 GiB free'})
                   </div>
                 </div>
                 <div className="space-y-1">
                   <div className="h-1.5 w-full bg-[#14281f] rounded-full overflow-hidden">
                     <div
                       className="h-full bg-emerald-400 rounded-full"
-                      style={{ width: `${data.turso.bytesMeasured ? Math.max(1, data.turso.percentUsed * 10) : 1}%` }}
+                      style={{ width: `${data.backup.bytesMeasured ? Math.max(1, data.backup.percentUsed * 10) : 1}%` }}
                     />
                   </div>
                   <div className="flex justify-between gap-2 text-[10px] text-[#55866f] font-mono">
-                    <span className="truncate">Backup cluster · {data.turso.latencyMs}ms</span>
+                    <span className="truncate">Backup cluster Ã‚Â· {data.backup.latencyMs}ms</span>
                     <span className="flex-shrink-0">
-                      {data.turso.bytesMeasured ? `${data.turso.availableFormatted} free` : 'probe failed'}
+                      {data.backup.bytesMeasured ? `${data.backup.availableFormatted} free` : 'probe failed'}
                     </span>
                   </div>
                 </div>
               </div>
 
-              {/* Users store — measured bytes + documented TiDB Starter ceiling */}
+              {/* Users store Ã¢â‚¬â€ measured bytes + documented TiDB Starter ceiling */}
               <div className="rounded-xl border border-[#2b3a4a] bg-[#0c1219]/90 p-5 space-y-3 shadow-lg hover:border-sky-500/40 transition-colors">
                 <div className="flex items-center justify-between text-xs text-[#8fb4cc]">
-                  <span className="font-mono uppercase tracking-wider">Users · TiDB</span>
+                  <span className="font-mono uppercase tracking-wider">Users Ã‚Â· TiDB</span>
                   <span
                     className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium border ${statusTone(data.usrinfo?.status).pill}`}
                   >
@@ -520,12 +520,12 @@ export default function StoragePage() {  const [data, setData] = useState<Storag
                     className="text-xs text-[#7e9cb3] mt-0.5"
                     title="TiDB Starter = 5 GiB row storage per cluster."
                   >
-                    Content bytes (measured) · quota {data.usrinfo?.quotaFormatted} (
+                    Content bytes (measured) Ã‚Â· quota {data.usrinfo?.quotaFormatted} (
                     {data.usrinfo?.quotaSource === 'env-override' ? 'operator override' : 'Starter 5 GiB'})
                   </div>
                   <div className="text-xs text-[#7e9cb3] mt-0.5">
-                    {data.usrinfo?.tables.identities ?? 0} names · {data.usrinfo?.tables.presence ?? 0}{' '}
-                    presence · {data.usrinfo?.tables.pageLocks ?? 0} leases
+                    {data.usrinfo?.tables.identities ?? 0} names Ã‚Â· {data.usrinfo?.tables.presence ?? 0}{' '}
+                    presence Ã‚Â· {data.usrinfo?.tables.pageLocks ?? 0} leases
                   </div>
                 </div>
                 <div className="space-y-1">
@@ -538,7 +538,7 @@ export default function StoragePage() {  const [data, setData] = useState<Storag
                     />
                   </div>
                   <div className="flex justify-between gap-2 text-[10px] text-[#5b7a90] font-mono">
-                    <span className="truncate">Identity store · {data.usrinfo?.latencyMs ?? 0}ms</span>
+                    <span className="truncate">Identity store Ã‚Â· {data.usrinfo?.latencyMs ?? 0}ms</span>
                     <span className="flex-shrink-0">
                       {data.usrinfo?.bytesMeasured ? `${data.usrinfo?.availableFormatted} free` : 'probe failed'}
                     </span>
@@ -656,7 +656,7 @@ export default function StoragePage() {  const [data, setData] = useState<Storag
                       <td className="py-3 px-4 text-sky-400 font-mono">MySQL 8 / TiDB</td>
                       <td className="py-3 px-4 text-emerald-400 font-mono">CockroachDB</td>
                       <td className="py-3 px-4 text-right font-mono">{data.tidb.booksCluster.tables.books}</td>
-                      <td className="py-3 px-4 text-right font-mono">{data.turso.tables.books}</td>
+                      <td className="py-3 px-4 text-right font-mono">{data.backup.tables.books}</td>
                       <td className="py-3 px-4 text-center">
                         <span className="inline-flex items-center gap-1 text-[11px] text-emerald-400">
                           <CheckCircle2 size={12} /> Synced
@@ -677,17 +677,17 @@ export default function StoragePage() {  const [data, setData] = useState<Storag
                           {data.tidb.booksCluster.tables.pagesLive ?? data.tidb.booksCluster.tables.pages} live
                           {typeof data.tidb.booksCluster.tables.pagesTombstoned === 'number' &&
                           data.tidb.booksCluster.tables.pagesTombstoned > 0
-                            ? ` · ${data.tidb.booksCluster.tables.pagesTombstoned} tombstoned`
+                            ? ` Ã‚Â· ${data.tidb.booksCluster.tables.pagesTombstoned} tombstoned`
                             : ''}
                         </span>
                       </td>
                       <td className="py-3 px-4 text-right font-mono">
-                        {data.turso.tables.pages}
+                        {data.backup.tables.pages}
                         <span className="block text-[10px] text-[#7d7261]">
-                          {data.turso.tables.pagesLive ?? data.turso.tables.pages} live
-                          {typeof data.turso.tables.pagesTombstoned === 'number' &&
-                          data.turso.tables.pagesTombstoned > 0
-                            ? ` · ${data.turso.tables.pagesTombstoned} tombstoned`
+                          {data.backup.tables.pagesLive ?? data.backup.tables.pages} live
+                          {typeof data.backup.tables.pagesTombstoned === 'number' &&
+                          data.backup.tables.pagesTombstoned > 0
+                            ? ` Ã‚Â· ${data.backup.tables.pagesTombstoned} tombstoned`
                             : ''}
                         </span>
                       </td>
@@ -711,17 +711,17 @@ export default function StoragePage() {  const [data, setData] = useState<Storag
                           {data.tidb.notesCluster.tables.pageNotesLive ?? data.tidb.notesCluster.tables.pageNotes} live
                           {typeof data.tidb.notesCluster.tables.pageNotesTombstoned === 'number' &&
                           data.tidb.notesCluster.tables.pageNotesTombstoned > 0
-                            ? ` · ${data.tidb.notesCluster.tables.pageNotesTombstoned} in trash`
+                            ? ` Ã‚Â· ${data.tidb.notesCluster.tables.pageNotesTombstoned} in trash`
                             : ''}
                         </span>
                       </td>
                       <td className="py-3 px-4 text-right font-mono">
-                        {data.turso.tables.pageNotes}
+                        {data.backup.tables.pageNotes}
                         <span className="block text-[10px] text-[#7d7261]">
-                          {data.turso.tables.pageNotesLive ?? data.turso.tables.pageNotes} live
-                          {typeof data.turso.tables.pageNotesTombstoned === 'number' &&
-                          data.turso.tables.pageNotesTombstoned > 0
-                            ? ` · ${data.turso.tables.pageNotesTombstoned} in trash`
+                          {data.backup.tables.pageNotesLive ?? data.backup.tables.pageNotes} live
+                          {typeof data.backup.tables.pageNotesTombstoned === 'number' &&
+                          data.backup.tables.pageNotesTombstoned > 0
+                            ? ` Ã‚Â· ${data.backup.tables.pageNotesTombstoned} in trash`
                             : ''}
                         </span>
                       </td>
@@ -745,17 +745,17 @@ export default function StoragePage() {  const [data, setData] = useState<Storag
                           {data.tidb.notesCluster.tables.boardNotesLive ?? data.tidb.notesCluster.tables.boardNotes} live
                           {typeof data.tidb.notesCluster.tables.boardNotesTombstoned === 'number' &&
                           data.tidb.notesCluster.tables.boardNotesTombstoned > 0
-                            ? ` · ${data.tidb.notesCluster.tables.boardNotesTombstoned} in trash`
+                            ? ` Ã‚Â· ${data.tidb.notesCluster.tables.boardNotesTombstoned} in trash`
                             : ''}
                         </span>
                       </td>
                       <td className="py-3 px-4 text-right font-mono">
-                        {data.turso.tables.boardNotes}
+                        {data.backup.tables.boardNotes}
                         <span className="block text-[10px] text-[#7d7261]">
-                          {data.turso.tables.boardNotesLive ?? data.turso.tables.boardNotes} live
-                          {typeof data.turso.tables.boardNotesTombstoned === 'number' &&
-                          data.turso.tables.boardNotesTombstoned > 0
-                            ? ` · ${data.turso.tables.boardNotesTombstoned} in trash`
+                          {data.backup.tables.boardNotesLive ?? data.backup.tables.boardNotes} live
+                          {typeof data.backup.tables.boardNotesTombstoned === 'number' &&
+                          data.backup.tables.boardNotesTombstoned > 0
+                            ? ` Ã‚Â· ${data.backup.tables.boardNotesTombstoned} in trash`
                             : ''}
                         </span>
                       </td>
@@ -772,8 +772,8 @@ export default function StoragePage() {  const [data, setData] = useState<Storag
                       </td>
                       <td className="py-3 px-4 text-[#9c8f7d]">TiDB users_db</td>
                       <td className="py-3 px-4 text-sky-400 font-mono">MySQL 8 / TiDB</td>
-                      <td className="py-3 px-4 text-[#6b6257] font-mono">— (identity only)</td>
-                      <td className="py-3 px-4 text-right font-mono">—</td>
+                      <td className="py-3 px-4 text-[#6b6257] font-mono">Ã¢â‚¬â€ (identity only)</td>
+                      <td className="py-3 px-4 text-right font-mono">Ã¢â‚¬â€</td>
                       <td className="py-3 px-4 text-right font-mono">{data.usrinfo?.tables.identities ?? 0}</td>
                       <td className="py-3 px-4 text-center">
                         <span className="inline-flex items-center gap-1 text-[11px] text-sky-400">
@@ -788,8 +788,8 @@ export default function StoragePage() {  const [data, setData] = useState<Storag
                       </td>
                       <td className="py-3 px-4 text-[#9c8f7d]">TiDB users_db</td>
                       <td className="py-3 px-4 text-sky-400 font-mono">MySQL 8 / TiDB</td>
-                      <td className="py-3 px-4 text-[#6b6257] font-mono">— (ephemeral)</td>
-                      <td className="py-3 px-4 text-right font-mono">—</td>
+                      <td className="py-3 px-4 text-[#6b6257] font-mono">Ã¢â‚¬â€ (ephemeral)</td>
+                      <td className="py-3 px-4 text-right font-mono">Ã¢â‚¬â€</td>
                       <td className="py-3 px-4 text-right font-mono">{data.usrinfo?.tables.presence ?? 0}</td>
                       <td className="py-3 px-4 text-center">
                         <span className="inline-flex items-center gap-1 text-[11px] text-sky-400">
@@ -804,8 +804,8 @@ export default function StoragePage() {  const [data, setData] = useState<Storag
                       </td>
                       <td className="py-3 px-4 text-[#9c8f7d]">TiDB users_db</td>
                       <td className="py-3 px-4 text-sky-400 font-mono">MySQL 8 / TiDB</td>
-                      <td className="py-3 px-4 text-[#6b6257] font-mono">— (leases)</td>
-                      <td className="py-3 px-4 text-right font-mono">—</td>
+                      <td className="py-3 px-4 text-[#6b6257] font-mono">Ã¢â‚¬â€ (leases)</td>
+                      <td className="py-3 px-4 text-right font-mono">Ã¢â‚¬â€</td>
                       <td className="py-3 px-4 text-right font-mono">{data.usrinfo?.tables.pageLocks ?? 0}</td>
                       <td className="py-3 px-4 text-center">
                         <span className="inline-flex items-center gap-1 text-[11px] text-sky-400">
@@ -831,9 +831,9 @@ export default function StoragePage() {  const [data, setData] = useState<Storag
                 <p className="text-xs text-[#a09482] leading-relaxed">
                   While continuous dual-write sync is automatically running in the background, you can trigger a full snapshot backup to CockroachDB or restore data back into TiDB at any moment.
                 </p>
-                {data.turso.lastBackupAt && (
+                {data.backup.lastBackupAt && (
                   <p className="text-[11px] text-[#7d7261] font-mono pt-1">
-                    Last snapshot backup: {new Date(data.turso.lastBackupAt).toLocaleString()}
+                    Last snapshot backup: {new Date(data.backup.lastBackupAt).toLocaleString()}
                   </p>
                 )}
               </div>

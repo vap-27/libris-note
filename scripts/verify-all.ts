@@ -196,17 +196,17 @@ async function run() {
     return updated
   })) passed++
 
-  // 9. Test Turso Backup API (GET /api/backup)
+  // 9. Test Backup API (GET /api/backup)
   total++
-  if (await assert('Turso Backup Status & Connectivity (/api/backup)', async () => {
+  if (await assert('Backup Status & Connectivity (/api/backup)', async () => {
     const r = await fetch(`${BASE}/api/backup`)
     const data = await r.json()
     return data.configured === true && data.stats?.booksCount >= 1 && data.stats?.pagesCount >= 3
   })) passed++
 
-  // 10. Test Turso On-Demand Snapshot Backup (POST /api/backup)
+  // 10. Test On-Demand Snapshot Backup (POST /api/backup)
   total++
-  if (await assert('Turso On-Demand Snapshot Backup (POST /api/backup)', async () => {
+  if (await assert('On-Demand Snapshot Backup (POST /api/backup)', async () => {
     const r = await fetch(`${BASE}/api/backup`, { method: 'POST' })
     const data = await r.json()
     return data.success === true && data.stats?.pages >= 3 && data.stats?.books >= 1

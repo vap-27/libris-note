@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { dbNotes, dbBooks } from '@/lib/db'
-import { withTiDBFallback, tursoSearchNotes } from '@/lib/turso'
+import { withTiDBFallback, searchBackupNotes } from '@/lib/backup-engine'
 import { requireAdmin } from '@/lib/auth'
 import { rlRead } from '@/lib/rate-limit'
 import { escapeLikeWildcards } from '@/lib/sanitize'
@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic'
  * GET /api/notes/search?q=...
  * Searches ALL margin notes and enriches each result with page title/section.
  * Primary: TiDB Notes & Books clusters.
- * Failover: Turso backup database.
+ * Failover: CockroachDB backup database.
  */
 export async function GET(req: NextRequest) {
   try {
@@ -34,16 +34,16 @@ export async function GET(req: NextRequest) {
           orderBy: { createdAt: 'desc' },
           take: 30,
         })
-        // H-5 fix: also search Turso-shifted rows and merge (dedup by id).
-        let tursoNotes: any[] = []
+        // H-5 fix: also search backup-shifted rows and merge (dedup by id).
+        let backupNotes: any[] = []
         try {
-          const t = await tursoSearchNotes(q)
-          tursoNotes = t.notes || []
+          const t = await searchBackupNotes(q)
+          backupNotes = t.notes || []
         } catch { /* best-effort merge */ }
         const seen = new Set(notes.map((n) => n.id))
         // Wave D: re-sort merged newest-first (both halves arrive desc, but
-        // concatenation alone would always rank Turso hits last).
-        const merged = [...notes, ...tursoNotes.filter((n) => !seen.has(n.id))]
+        // concatenation alone would always rank backup hits last).
+        const merged = [...notes, ...backupNotes.filter((n) => !seen.has(n.id))]
           .sort(
             (a, b) =>
               new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
@@ -53,7 +53,7 @@ export async function GET(req: NextRequest) {
           return { notes: [] }
         }
 
-        // Enrich TiDB-origin notes with page info; Turso notes already enriched.
+        // Enrich TiDB-origin notes with page info; backup notes already enriched.
         const needEnrich = merged.filter((n) => !('pageTitle' in n))
         const pageIds = [...new Set(needEnrich.map((n) => n.pageId))]
         const pages = pageIds.length
@@ -74,7 +74,7 @@ export async function GET(req: NextRequest) {
         }
       },
       async () => {
-        return await tursoSearchNotes(q)
+        return await searchBackupNotes(q)
       },
       `GET /api/notes/search`,
       'notes'
@@ -82,7 +82,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(result)
   } catch (err) {
-    console.error('[api/notes/search] GET failed on both TiDB and Turso:', err)
+    console.error('[api/notes/search] GET failed on both TiDB and CockroachDB:', err)
     return NextResponse.json({ error: 'Failed to search notes' }, { status: 500 })
   }
 }

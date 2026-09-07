@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { dbNotes } from '@/lib/db'
-import { withTiDBFallback, tursoGetBookNotes, getMergedBookPageNotes } from '@/lib/turso'
+import { withTiDBFallback, getBackupBookNotes, getMergedBookPageNotes } from '@/lib/backup-engine'
 import { requireAdmin } from '@/lib/auth'
 import { rlRead } from '@/lib/rate-limit'
 
@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic'
  * GET /api/notes?bookId=...&trash=1
  * Margin notes for a book.
  * Primary: TiDB Notes cluster.
- * Failover: Turso backup database.
+ * Failover: CockroachDB backup database.
  */
 export async function GET(req: NextRequest) {
   try {
@@ -41,20 +41,20 @@ export async function GET(req: NextRequest) {
           take: limit,
           skip: offset,
         })
-        // H-5 fix: merge Turso-shifted rows so they don't look deleted —
-        // including Turso-side trash (P5), which was previously invisible.
+        // H-5 fix: merge backup-shifted rows so they don't look deleted Ã¢â‚¬â€
+        // including backup-side trash (P5), which was previously invisible.
         const merged = await getMergedBookPageNotes(notes, bookId, trash)
         return { notes: merged }
       },
       async () => {
-        return await tursoGetBookNotes(bookId, trash)
+        return await getBackupBookNotes(bookId, trash)
       },
       `GET /api/notes?bookId=${bookId}&trash=${trash ? '1' : '0'}`
     )
 
     return NextResponse.json(result)
   } catch (err) {
-    console.error('[api/notes] GET failed on both TiDB and Turso:', err)
+    console.error('[api/notes] GET failed on both TiDB and CockroachDB:', err)
     return NextResponse.json({ error: 'Failed to load notes' }, { status: 500 })
   }
 }

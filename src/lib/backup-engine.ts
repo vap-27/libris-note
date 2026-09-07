@@ -4,14 +4,15 @@ import { isBlankHtml, escapeLikeWildcards } from './sanitize'
 import { SWEEP_MIN_AGE_MS } from './identity'
 
 /**
- * Backup-engine front: CockroachDB via Prisma. Export names are historical
- * (turso*, isTursoConfigured, getTursoBackupStats, …) so the 15 API call
- * sites keep working untouched — but every byte below now goes to
- * CockroachDB. The old Turso backup database is decommissioned; usernames,
- * presence and page leases live in src/lib/usrinfo.ts (separate Turso DB).
+ * Backup-engine front: CockroachDB via Prisma. Dual-engine data plane for
+ * the whole app: TiDB-first reads/writes with automatic failover, snapshots,
+ * restore, replication mirror, merged reads, and shift telemetry.
+ * (History: this module was once `turso.ts` backed by Turso LibSQL, now
+ * decommissioned. Identity/presence/page leases live in `src/lib/usrinfo.ts`
+ * on the TiDB users cluster.)
  */
 
-export function isTursoConfigured(): boolean {
+export function isBackupConfigured(): boolean {
   return Boolean(process.env.BACKUP_DATABASE_URL)
 }
 
@@ -19,7 +20,7 @@ export function isTursoConfigured(): boolean {
  * Legacy no-op kept for existing call sites: the CockroachDB schema is
  * managed by `prisma db push --schema prisma/schema-backup.prisma`.
  */
-export async function initTursoTables(): Promise<void> {
+export async function initBackupTables(): Promise<void> {
   return
 }
 
@@ -30,7 +31,7 @@ export interface BackupStats {
   pagesCount: number
   pageNotesCount: number
   boardNotesCount: number
-  /** Redacted presence flags — never leak raw connection URLs (L-5). */
+  /** Redacted presence flags Ã¢â‚¬â€ never leak raw connection URLs (L-5). */
   databaseUrl: string
   notesDatabaseUrl: string
 }
@@ -53,8 +54,8 @@ function maskDbUrl(url: string): string {
 /**
  * Get current row counts and metadata from the CockroachDB backup database.
  */
-export async function getTursoBackupStats(): Promise<BackupStats> {
-  if (!isTursoConfigured()) {
+export async function getBackupStats(): Promise<BackupStats> {
+  if (!isBackupConfigured()) {
     return {
       configured: false,
       lastBackupAt: null,
@@ -103,9 +104,9 @@ export async function getTursoBackupStats(): Promise<BackupStats> {
 
 /**
  * Backup-engine quota: operator override first, otherwise the CockroachDB
- * Cloud Basic free allowance (10 GiB/month, per cockroachlabs.com/pricing —
+ * Cloud Basic free allowance (10 GiB/month, per cockroachlabs.com/pricing Ã¢â‚¬â€
  * verified 2026; Basic caps at 3 TiB with the first 10 GiB free). The default
- * is a documented plan value, NOT a measurement — set BACKUP_QUOTA_BYTES if
+ * is a documented plan value, NOT a measurement Ã¢â‚¬â€ set BACKUP_QUOTA_BYTES if
  * the cluster is on a paid plan so the dashboard never shows a fake ceiling.
  */
 export const BACKUP_QUOTA_BYTES_DEFAULT = 10 * 1024 * 1024 * 1024
@@ -132,7 +133,7 @@ export interface BackupDiskUsage {
 }
 
 /**
- * REAL backup-engine usage — measured from CockroachDB itself, never
+ * REAL backup-engine usage Ã¢â‚¬â€ measured from CockroachDB itself, never
  * estimated from row counts. Each table contributes SUM(octet_length(...))
  * over its text columns plus a fixed per-row allowance for the scalar
  * columns (ints/floats/bools/timestamps/row header). This is stored-content
@@ -152,7 +153,7 @@ export async function getBackupDiskUsage(): Promise<BackupDiskUsage> {
     systemLogs: 0,
     backupMeta: 0,
   }
-  if (!isTursoConfigured()) {
+  if (!isBackupConfigured()) {
     return { ok: false, latencyMs: 0, bytesByTable: zero, totalBytes: 0 }
   }
   // Fixed per-row allowance for non-text columns + row overhead.
@@ -191,7 +192,7 @@ export async function getBackupDiskUsage(): Promise<BackupDiskUsage> {
     const totalBytes = Object.values(bytesByTable).reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0)
     return { ok: true, latencyMs: Date.now() - start, bytesByTable, totalBytes }
   } catch (error) {
-    console.warn('[turso] backup disk usage probe failed:', (error as any)?.message || error)
+    console.warn('[backup] backup disk usage probe failed:', (error as any)?.message || error)
     return { ok: false, latencyMs: Date.now() - start, bytesByTable: zero, totalBytes: 0 }
   }
 }
@@ -199,7 +200,7 @@ export async function getBackupDiskUsage(): Promise<BackupDiskUsage> {
 /**
  * Perform a full snapshot backup from TiDB into CockroachDB.
  */
-export async function backupAllToTurso(): Promise<{
+export async function snapshotToBackup(): Promise<{
   success: boolean
   stats: {
     books: number
@@ -209,7 +210,7 @@ export async function backupAllToTurso(): Promise<{
     timestamp: string
   }
 }> {
-  await initTursoTables()
+  await initBackupTables()
 
   // 1. Fetch from TiDB
   const [books, pages] = await Promise.all([
@@ -225,7 +226,7 @@ export async function backupAllToTurso(): Promise<{
   const nowIso = new Date().toISOString()
 
   // Upsert into CockroachDB in bounded $transaction chunks (200 rows each):
-  // same spirit as the old chunked batches — no unbounded round trip.
+  // same spirit as the old chunked batches Ã¢â‚¬â€ no unbounded round trip.
   // deletedAt is always written so tombstones propagate (never untombstone).
   const upsertChunked = async <T>(rows: T[], fn: (chunk: T[]) => Promise<unknown>) => {
     // Sequential chunks by design: bounded memory + ordered writes.
@@ -394,7 +395,7 @@ export async function backupAllToTurso(): Promise<{
  * unless the caller explicitly forces it. Deleted-in-TiDB rows are NOT
  * resurrected when live data is newer.
  */
-export async function restoreAllFromTurso(opts?: {
+export async function restoreFromBackup(opts?: {
   force?: boolean
 }): Promise<{
   success: boolean
@@ -468,7 +469,7 @@ export async function restoreAllFromTurso(opts?: {
 
   // Pages: skip stale + guard duplicate pageNumbers (M-1) so a half-restored
   // book can't abort midway on @@unique violations. Tombstoned backup rows
-  // stay dead unless forced — otherwise every restore resurrects deletions.
+  // stay dead unless forced Ã¢â‚¬â€ otherwise every restore resurrects deletions.
   const livePages = await dbBooks.page.findMany({ select: { id: true, bookId: true, pageNumber: true, updatedAt: true, deletedAt: true } })
   const liveById = new Map(livePages.map((p) => [p.id, p]))
   const takenNumbers = new Set(livePages.map((p) => `${p.bookId}:${p.pageNumber}`))
@@ -485,7 +486,7 @@ export async function restoreAllFromTurso(opts?: {
       continue
     }
     // A live tombstone stands unless the backup row is genuinely newer than
-    // the deletion itself — otherwise restore would undo every delete.
+    // the deletion itself Ã¢â‚¬â€ otherwise restore would undo every delete.
     if (live?.deletedAt && !force) {
       const liveTime = live.updatedAt.getTime()
       const backupTime = new Date(String(row.updatedAt)).getTime()
@@ -696,13 +697,13 @@ function normalizeDeletePayload(payload: any): { noteId: string; soft: boolean }
 
 /** Retry due queue entries. Fire-and-forget safe; never throws. */
 export async function flushReplicationQueue(limit = 50): Promise<{ retried: number; pending: number }> {
-  if (!isTursoConfigured() || globalForRepl.__librisReplFlushing) {
+  if (!isBackupConfigured() || globalForRepl.__librisReplFlushing) {
     return { retried: 0, pending: replQueue().length }
   }
   globalForRepl.__librisReplFlushing = true
   let retried = 0
   try {
-    await initTursoTables().catch(() => {})
+    await initBackupTables().catch(() => {})
     const q = replQueue()
     const now = Date.now()
     const due = q.filter((e) => e.nextAt <= now).slice(0, limit)
@@ -712,7 +713,7 @@ export async function flushReplicationQueue(limit = 50): Promise<{ retried: numb
       try {
         switch (entry.kind) {
           case 'page-upsert':
-            await tursoDirectPageUpsert(entry.payload)
+            await backupDirectPageUpsert(entry.payload)
             break
           case 'page-delete': {
             const delId =
@@ -735,7 +736,7 @@ export async function flushReplicationQueue(limit = 50): Promise<{ retried: numb
           case 'page-note-delete': {
             const p = normalizeDeletePayload(entry.payload)
             if (p.soft) {
-              await tursoDeletePageNote(p.noteId)
+              await deleteBackupPageNote(p.noteId)
             } else {
               await dbBackup.backupPageNote.deleteMany({ where: { id: p.noteId } })
             }
@@ -744,7 +745,7 @@ export async function flushReplicationQueue(limit = 50): Promise<{ retried: numb
           case 'board-note-delete': {
             const p = normalizeDeletePayload(entry.payload)
             if (p.soft) {
-              await tursoDeleteBoardNote(p.noteId)
+              await deleteBackupBoardNote(p.noteId)
             } else {
               await dbBackup.backupBoardNote.deleteMany({ where: { id: p.noteId } })
             }
@@ -784,7 +785,7 @@ export function getReplicationStats() {
 }
 
 /** Direct page upsert used by retries (throws on failure, unlike replicatePageUpsert). */
-async function tursoDirectPageUpsert(page: any): Promise<void> {
+async function backupDirectPageUpsert(page: any): Promise<void> {
   await upsertBackupPageNow(page)
 }
 
@@ -796,23 +797,23 @@ async function replicateNoteUpsertNow(note: any): Promise<void> {
 export interface DivergenceTable {
   table: string
   tidb: number
-  turso: number
+  backup: number
   delta: number
 }
 
 /** Cheap divergence signal from counts the storage endpoint already has. */
 export function buildDivergence(
   tidb: { books: number; pages: number; pageNotes: number; boardNotes: number },
-  turso: { books: number; pages: number; pageNotes: number; boardNotes: number }
+  backup: { books: number; pages: number; pageNotes: number; boardNotes: number }
 ): { diverged: boolean; tables: DivergenceTable[] } {
   const tables: DivergenceTable[] = (
     [
-      ['books', tidb.books, turso.books],
-      ['pages', tidb.pages, turso.pages],
-      ['pageNotes', tidb.pageNotes, turso.pageNotes],
-      ['boardNotes', tidb.boardNotes, turso.boardNotes],
+      ['books', tidb.books, backup.books],
+      ['pages', tidb.pages, backup.pages],
+      ['pageNotes', tidb.pageNotes, backup.pageNotes],
+      ['boardNotes', tidb.boardNotes, backup.boardNotes],
     ] as Array<[string, number, number]>
-  ).map(([table, t, u]) => ({ table, tidb: t, turso: u, delta: t - u }))
+  ).map(([table, t, u]) => ({ table, tidb: t, backup: u, delta: t - u }))
   return { diverged: tables.some((t) => t.delta !== 0), tables }
 }
 
@@ -886,26 +887,26 @@ export async function replicatePageUpsert(page: {
   createdAt?: Date
   updatedAt?: Date
 }): Promise<void> {
-  if (!isTursoConfigured()) return
+  if (!isBackupConfigured()) return
   try {
     await upsertBackupPageNow(page)
   } catch (err) {
-    console.warn('[turso] replicatePageUpsert error:', err)
+    console.warn('[backup] replicatePageUpsert error:', err)
     enqueueReplicationFailure('page-upsert', { ...page })
   }
 }
 
 /**
  * Non-blocking continuous replication: mirror a page tombstone into the
- * backup engine (soft-delete + negate, never a hard DELETE — the tombstone
+ * backup engine (soft-delete + negate, never a hard DELETE Ã¢â‚¬â€ the tombstone
  * must survive for merge/restore to agree the page is gone).
  */
 export async function replicatePageDelete(pageId: string): Promise<void> {
-  if (!isTursoConfigured()) return
+  if (!isBackupConfigured()) return
   try {
     await tombstoneBackupPageNow(pageId)
   } catch (err) {
-    console.warn('[turso] replicatePageDelete error:', err)
+    console.warn('[backup] replicatePageDelete error:', err)
     enqueueReplicationFailure('page-delete', pageId)
   }
 }
@@ -999,11 +1000,11 @@ export async function replicateNoteUpsert(note: {
   updatedAt?: Date
   isBoard?: boolean
 }): Promise<void> {
-  if (!isTursoConfigured()) return
+  if (!isBackupConfigured()) return
   try {
     await upsertBackupNoteNow(note)
   } catch (err) {
-    console.warn('[turso] replicateNoteUpsert error:', err)
+    console.warn('[backup] replicateNoteUpsert error:', err)
     enqueueReplicationFailure('note-upsert', { ...note })
   }
 }
@@ -1012,7 +1013,7 @@ export async function replicateNoteUpsert(note: {
  * Non-blocking continuous replication: replicate note deletion/soft-delete to CockroachDB.
  */
 export async function replicateBoardNoteDelete(noteId: string, soft = true): Promise<void> {
-  if (!isTursoConfigured()) return
+  if (!isBackupConfigured()) return
   try {
     if (soft) {
       await dbBackup.backupBoardNote.updateMany({
@@ -1023,13 +1024,13 @@ export async function replicateBoardNoteDelete(noteId: string, soft = true): Pro
       await dbBackup.backupBoardNote.deleteMany({ where: { id: String(noteId) } })
     }
   } catch (err) {
-    console.warn('[turso] replicateBoardNoteDelete error:', err)
+    console.warn('[backup] replicateBoardNoteDelete error:', err)
     enqueueReplicationFailure('board-note-delete', { noteId, soft })
   }
 }
 
 export async function replicatePageNoteDelete(noteId: string, soft = true): Promise<void> {
-  if (!isTursoConfigured()) return
+  if (!isBackupConfigured()) return
   try {
     if (soft) {
       await dbBackup.backupPageNote.updateMany({
@@ -1040,7 +1041,7 @@ export async function replicatePageNoteDelete(noteId: string, soft = true): Prom
       await dbBackup.backupPageNote.deleteMany({ where: { id: String(noteId) } })
     }
   } catch (err) {
-    console.warn('[turso] replicatePageNoteDelete error:', err)
+    console.warn('[backup] replicatePageNoteDelete error:', err)
     enqueueReplicationFailure('page-note-delete', { noteId, soft })
   }
 }
@@ -1050,11 +1051,11 @@ export async function replicatePageNoteDelete(noteId: string, soft = true): Prom
  * a missing row simply means already purged.
  */
 export async function replicateBoardNotePurge(noteId: string): Promise<void> {
-  if (!isTursoConfigured()) return
+  if (!isBackupConfigured()) return
   try {
     await dbBackup.backupBoardNote.deleteMany({ where: { id: String(noteId) } })
   } catch (err) {
-    console.warn('[turso] replicateBoardNotePurge error:', err)
+    console.warn('[backup] replicateBoardNotePurge error:', err)
     enqueueReplicationFailure('board-note-purge', noteId)
   }
 }
@@ -1063,12 +1064,12 @@ export async function replicateBoardNotePurge(noteId: string): Promise<void> {
  * CockroachDB-side permanent purge of one trashed board note. Refuses live rows
  * so a stale client can never skip the trash.
  */
-export async function tursoPurgeBoardNote(noteId: string): Promise<void> {
-  await initTursoTables()
+export async function purgeBackupBoardNote(noteId: string): Promise<void> {
+  await initBackupTables()
   const existing = await dbBackup.backupBoardNote.findUnique({ where: { id: String(noteId) } })
-  if (!existing) throw new Error('Board note not found in Turso')
+  if (!existing) throw new Error('Board note not found in CockroachDB')
   if (!existing.deletedAt) {
-    throw new Error('Move to trash first — only trashed notes can be purged')
+    throw new Error('Move to trash first Ã¢â‚¬â€ only trashed notes can be purged')
   }
   await dbBackup.backupBoardNote.delete({ where: { id: String(noteId) } })
 }
@@ -1076,8 +1077,8 @@ export async function tursoPurgeBoardNote(noteId: string): Promise<void> {
 /**
  * CockroachDB-side permanent purge of ALL trashed board notes. Returns the count.
  */
-export async function tursoPurgeBoardTrash(): Promise<{ purged: number }> {
-  await initTursoTables()
+export async function purgeBackupBoardTrash(): Promise<{ purged: number }> {
+  await initBackupTables()
   const res = await dbBackup.backupBoardNote.deleteMany({ where: { deletedAt: { not: null } } })
   return { purged: res.count }
 }
@@ -1283,7 +1284,7 @@ export function getStorageShiftStatus() {
       remainingBytes: booksRemaining,
       isUnder10MB: booksUnder10MB,
       isUnder1MB: booksUnder1MB,
-      shiftedToTurso: booksUnder10MB,
+      shiftedToBackup: booksUnder10MB,
       quotaSource: books.source,
       usedBytes: books.used,
       quotaBytes: TIDB_QUOTA_BYTES,
@@ -1297,7 +1298,7 @@ export function getStorageShiftStatus() {
       remainingBytes: notesRemaining,
       isUnder10MB: notesUnder10MB,
       isUnder1MB: notesUnder1MB,
-      shiftedToTurso: notesUnder10MB,
+      shiftedToBackup: notesUnder10MB,
       quotaSource: notes.source,
       usedBytes: notes.used,
       quotaBytes: TIDB_QUOTA_BYTES,
@@ -1310,7 +1311,7 @@ export function getStorageShiftStatus() {
   }
 }
 
-export function shouldShiftToTurso(domain: 'books' | 'notes'): boolean {
+export function shouldShiftToBackup(domain: 'books' | 'notes'): boolean {
   return remainingFor(domain).remaining < TIDB_LOW_STORAGE_THRESHOLD_BYTES
 }
 
@@ -1349,7 +1350,7 @@ export function isNonFailoverError(err: any): boolean {
  * 1. If TiDB cluster is under 10MB remaining storage (or shifted), writes directly to CockroachDB.
  * 2. If TiDB cluster is above 10MB, writes to TiDB; if TiDB fails with a
  *    *connection/storage* error, transparently falls back to CockroachDB.
- *    Validation / constraint / not-found-class errors never fork (M-5) — except
+ *    Validation / constraint / not-found-class errors never fork (M-5) Ã¢â‚¬â€ except
  *    NotFound, which still probes the other engine because shifted rows live
  *    in exactly one store (H-5).
  */
@@ -1359,12 +1360,12 @@ export async function withStorageShift<T>(
   domain: 'books' | 'notes',
   operationName: string
 ): Promise<T> {
-  const isShifted = shouldShiftToTurso(domain)
+  const isShifted = shouldShiftToBackup(domain)
   if (isShifted) {
     console.info(
       `[Storage Shift Active] TiDB ${domain} cluster is under 10MB threshold. Shifting operation "${operationName}" directly to CockroachDB...`
     )
-    if (!isTursoConfigured()) {
+    if (!isBackupConfigured()) {
       console.warn(`[Storage Shift] Backup engine is not configured; attempting TiDB anyway...`)
       return await primaryFn()
     }
@@ -1376,7 +1377,7 @@ export async function withStorageShift<T>(
     return await primaryFn()
   } catch (err: any) {
     if (isNonFailoverError(err)) throw err
-    if (!isTursoConfigured()) {
+    if (!isBackupConfigured()) {
       throw err
     }
     // NotFound still probes the other engine (shifted rows live in one store),
@@ -1388,11 +1389,11 @@ export async function withStorageShift<T>(
     }
     try {
       return await fallbackFn()
-    } catch (tursoErr: any) {
+    } catch (backupErr: any) {
       // If both engines miss, surface the backup not-found so routes can 404.
-      if (isNotFoundError(err) && isNotFoundError(tursoErr)) throw tursoErr
-      console.error(`[TiDB Failover] CockroachDB fallback ALSO failed for "${operationName}":`, tursoErr)
-      throw tursoErr
+      if (isNotFoundError(err) && isNotFoundError(backupErr)) throw backupErr
+      console.error(`[TiDB Failover] CockroachDB fallback ALSO failed for "${operationName}":`, backupErr)
+      throw backupErr
     }
   }
 }
@@ -1421,11 +1422,11 @@ export async function getMergedBookPages(
   primaryPages: any[],
   bookId: string
 ): Promise<any[]> {
-  if (!isTursoConfigured()) return primaryPages
+  if (!isBackupConfigured()) return primaryPages
   try {
-    const tursoPages = await tursoListPages(bookId)
+    const backupPages = await listBackupPages(bookId)
     const existingIds = new Set(primaryPages.map((p) => p.id))
-    const shiftedPages = tursoPages.filter((p) => !existingIds.has(p.id))
+    const shiftedPages = backupPages.filter((p) => !existingIds.has(p.id))
 
     if (shiftedPages.length === 0) return primaryPages
 
@@ -1458,15 +1459,15 @@ export async function getMergedBookPages(
 
 /**
   * Merges board notes from TiDB with any board notes created in CockroachDB during shifted mode.
- * Preserves the canonical z-stack order (z ASC, createdAt ASC) — M-1 fix.
+ * Preserves the canonical z-stack order (z ASC, createdAt ASC) Ã¢â‚¬â€ M-1 fix.
  */
 export async function getMergedBoardNotes(
   primaryNotes: any[],
   trash = false
 ): Promise<any[]> {
-  if (!isTursoConfigured()) return primaryNotes
+  if (!isBackupConfigured()) return primaryNotes
   try {
-    const res = await tursoGetBoardNotes(trash)
+    const res = await getBackupBoardNotes(trash)
     const existingIds = new Set(primaryNotes.map((n) => n.id))
     const shiftedNotes = (res.notes || []).filter((n) => !existingIds.has(n.id))
 
@@ -1491,9 +1492,9 @@ export async function getMergedBookPageNotes(
   bookId: string,
   trash = false
 ): Promise<any[]> {
-  if (!isTursoConfigured()) return primaryNotes
+  if (!isBackupConfigured()) return primaryNotes
   try {
-    const res = await tursoGetBookNotes(bookId, trash)
+    const res = await getBackupBookNotes(bookId, trash)
     const existingIds = new Set(primaryNotes.map((n) => n.id))
     const shifted = (res.notes || []).filter((n) => !existingIds.has(n.id))
     if (shifted.length === 0) return primaryNotes
@@ -1513,9 +1514,9 @@ export async function getMergedPageNotes(
   primaryNotes: any[],
   pageId: string
 ): Promise<any[]> {
-  if (!isTursoConfigured()) return primaryNotes
+  if (!isBackupConfigured()) return primaryNotes
   try {
-    const res = await tursoGetPageNotes(pageId)
+    const res = await getBackupPageNotes(pageId)
     const existingIds = new Set(primaryNotes.map((n) => n.id))
     const shiftedNotes = (res.notes || []).filter((n) => !existingIds.has(n.id))
 
@@ -1538,8 +1539,8 @@ export async function getMergedPageNotes(
  * Reading-position fallback (Wave D): store lastPage on the CockroachDB books row
  * when TiDB Cluster A is unreachable. Clamped to the backup's own max page.
  */
-export async function tursoUpdateProgress(page: number): Promise<{ page: number }> {
-  await initTursoTables()
+export async function updateBackupProgress(page: number): Promise<{ page: number }> {
+  await initBackupTables()
   const book = await dbBackup.backupBook.findFirst({ orderBy: { createdAt: 'asc' } })
   if (!book) throw new Error('No book found in CockroachDB backup')
   const maxAgg = await dbBackup.backupPage.aggregate({
@@ -1555,7 +1556,7 @@ export async function tursoUpdateProgress(page: number): Promise<{ page: number 
   return { page: stored }
 }
 
-export async function tursoGetFirstBookId(): Promise<string | null> {
+export async function getBackupFirstBookId(): Promise<string | null> {
   const book = await dbBackup.backupBook.findFirst({
     orderBy: { createdAt: 'asc' },
     select: { id: true },
@@ -1563,8 +1564,8 @@ export async function tursoGetFirstBookId(): Promise<string | null> {
   return book?.id ?? null
 }
 
-export async function tursoGetBookWithPages(): Promise<{ book: any; pages: any[] }> {
-  await initTursoTables()
+export async function getBackupBookWithPages(): Promise<{ book: any; pages: any[] }> {
+  await initBackupTables()
   let book = await dbBackup.backupBook.findFirst({ orderBy: { createdAt: 'asc' } })
 
   if (!book) {
@@ -1596,7 +1597,7 @@ export async function tursoGetBookWithPages(): Promise<{ book: any; pages: any[]
   }
 }
 
-export async function tursoListPages(bookId: string): Promise<any[]> {
+export async function listBackupPages(bookId: string): Promise<any[]> {
   const pages = await dbBackup.backupPage.findMany({
     where: { bookId, deletedAt: null },
     orderBy: { pageNumber: 'asc' },
@@ -1604,14 +1605,14 @@ export async function tursoListPages(bookId: string): Promise<any[]> {
   return pages.map(mapPageRow)
 }
 
-export async function tursoCreatePage(
+export async function createBackupPage(
   bookId: string,
   afterPageNumber?: number,
   title = '',
   content = ''
 ): Promise<{ page: any; pages: any[] }> {
-  await initTursoTables()
-  const pages = await tursoListPages(bookId)
+  await initBackupTables()
+  const pages = await listBackupPages(bookId)
   const numbered = pages.filter((p) => p.pageNumber > 0)
   const maxPage = numbered.length ? Math.max(...numbered.map((p) => p.pageNumber)) : 0
 
@@ -1621,11 +1622,11 @@ export async function tursoCreatePage(
       : maxPage
 
   const now = new Date()
-  const newPageId = `turso_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
+  const newPageId = `backup_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
 
   // Renumber + insert inside one CockroachDB transaction. Live rows shift via
   // the negate trick (tombstones excluded); concurrent inserts serialize on
-  // the unique index — a P2002-equivalent aborts the whole tx for retry above.
+  // the unique index Ã¢â‚¬â€ a P2002-equivalent aborts the whole tx for retry above.
   await dbBackup.$transaction(async (tx) => {
     if (after < maxPage) {
       await tx.$executeRaw`UPDATE "pages" SET "pageNumber" = -"pageNumber" WHERE "bookId" = ${bookId} AND "pageNumber" > ${after} AND "deletedAt" IS NULL`;
@@ -1655,11 +1656,11 @@ export async function tursoCreatePage(
         data: { pageNumber: { increment: 1 } },
       })
     } catch (e) {
-      console.warn('[turso] notes renumbering after insert warning:', e)
+      console.warn('[backup] notes renumbering after insert warning:', e)
     }
   }
 
-  const updatedPages = await tursoListPages(bookId)
+  const updatedPages = await listBackupPages(bookId)
   const createdPage = updatedPages.find((p) => p.id === newPageId) || {
     id: newPageId,
     bookId,
@@ -1676,11 +1677,11 @@ export async function tursoCreatePage(
   return { page: createdPage, pages: updatedPages }
 }
 
-export async function tursoUpdatePage(
+export async function updateBackupPage(
   pageId: string,
   data: { content?: string; title?: string; pinned?: boolean }
 ): Promise<{ page: any }> {
-  await initTursoTables()
+  await initBackupTables()
   const existing = await dbBackup.backupPage.findUnique({ where: { id: pageId } })
   if (!existing) {
     throw new Error('Page not found in CockroachDB backup')
@@ -1703,11 +1704,11 @@ export async function tursoUpdatePage(
   return { page: mapPageRow(updated) }
 }
 
-export async function tursoDeletePage(
+export async function deleteBackupPage(
   pageId: string,
   opts?: { sweep?: boolean }
 ): Promise<{ pages: any[] }> {
-  await initTursoTables()
+  await initBackupTables()
   const existing = await dbBackup.backupPage.findUnique({ where: { id: pageId } })
   if (!existing) {
     throw new Error('Page not found in CockroachDB backup')
@@ -1724,14 +1725,14 @@ export async function tursoDeletePage(
       !isBlankHtml(existing.content) ||
       (existing.title ?? '').trim().length !== 0)
   ) {
-    throw new Error('Page is not blank — refusing auto-sweep')
+    throw new Error('Page is not blank Ã¢â‚¬â€ refusing auto-sweep')
   }
   if (opts?.sweep && Date.now() - existing.createdAt.getTime() < SWEEP_MIN_AGE_MS) {
-    throw new Error('Page is too fresh to sweep — try again later')
+    throw new Error('Page is too fresh to sweep Ã¢â‚¬â€ try again later')
   }
 
   // Soft delete: tombstone parks below any existing negative (unique across
-  // delete → recreate → delete cycles), freeing its live slot; live rows
+  // delete Ã¢â€ â€™ recreate Ã¢â€ â€™ delete cycles), freeing its live slot; live rows
   // above then close the gap. Tombstones never renumber.
   const nowDel = new Date()
   const minAgg = await dbBackup.backupPage.aggregate({
@@ -1763,10 +1764,10 @@ export async function tursoDeletePage(
       })
     }
   } catch (e) {
-    console.warn('[turso] notes sync after delete warning:', e)
+    console.warn('[backup] notes sync after delete warning:', e)
   }
 
-  const pages = await tursoListPages(existing.bookId)
+  const pages = await listBackupPages(existing.bookId)
   return { pages }
 }
 
@@ -1774,8 +1775,8 @@ export async function tursoDeletePage(
 // Board Notes Fallback Operations (CockroachDB backup engine)
 // --------------------------------------------------------------------------
 
-export async function tursoGetBoardNotes(trash = false): Promise<{ notes: any[] }> {
-  await initTursoTables()
+export async function getBackupBoardNotes(trash = false): Promise<{ notes: any[] }> {
+  await initBackupTables()
   const notes = await dbBackup.backupBoardNote.findMany({
     where: trash ? { deletedAt: { not: null } } : { deletedAt: null },
     orderBy: [{ z: 'asc' }, { createdAt: 'asc' }],
@@ -1783,7 +1784,7 @@ export async function tursoGetBoardNotes(trash = false): Promise<{ notes: any[] 
   return { notes: notes.map(mapBoardNoteRow) }
 }
 
-export async function tursoCreateBoardNote(data: {
+export async function createBackupBoardNote(data: {
   content?: string
   color?: string
   type?: string
@@ -1793,8 +1794,8 @@ export async function tursoCreateBoardNote(data: {
   height?: number
   rotation?: number
 }): Promise<{ note: any }> {
-  await initTursoTables()
-  const id = `turso_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
+  await initBackupTables()
+  const id = `backup_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
   const now = new Date()
 
   const content = typeof data.content === 'string' ? data.content.slice(0, 20000) : ''
@@ -1839,11 +1840,11 @@ export async function tursoCreateBoardNote(data: {
   return { note: mapBoardNoteRow(note) }
 }
 
-export async function tursoUpdateBoardNote(
+export async function updateBackupBoardNote(
   noteId: string,
   data: Record<string, any>
 ): Promise<{ note: any }> {
-  await initTursoTables()
+  await initBackupTables()
   const existing = await dbBackup.backupBoardNote.findUnique({ where: { id: noteId } })
   if (!existing) throw new Error('Board note not found in CockroachDB backup')
   if (existing.deletedAt) throw new Error('This note is in the trash')
@@ -1866,8 +1867,8 @@ export async function tursoUpdateBoardNote(
   return { note: mapBoardNoteRow(note) }
 }
 
-export async function tursoDeleteBoardNote(noteId: string): Promise<{ note: any }> {
-  await initTursoTables()
+export async function deleteBackupBoardNote(noteId: string): Promise<{ note: any }> {
+  await initBackupTables()
   const existing = await dbBackup.backupBoardNote.findUnique({ where: { id: noteId } })
   if (!existing) throw new Error('Board note not found')
   if (existing.deletedAt) return { note: mapBoardNoteRow(existing) }
@@ -1881,8 +1882,8 @@ export async function tursoDeleteBoardNote(noteId: string): Promise<{ note: any 
   return { note: mapBoardNoteRow(note) }
 }
 
-export async function tursoRestoreBoardNote(noteId: string): Promise<{ note: any }> {
-  await initTursoTables()
+export async function restoreBackupBoardNote(noteId: string): Promise<{ note: any }> {
+  await initBackupTables()
   const existing = await dbBackup.backupBoardNote.findUnique({ where: { id: noteId } })
   if (!existing) throw new Error('Board note not found')
 
@@ -1900,8 +1901,8 @@ export async function tursoRestoreBoardNote(noteId: string): Promise<{ note: any
 // Page Notes Fallback Operations (CockroachDB backup engine)
 // --------------------------------------------------------------------------
 
-export async function tursoGetPageNotes(pageId: string): Promise<{ page: any; notes: any[] }> {
-  await initTursoTables()
+export async function getBackupPageNotes(pageId: string): Promise<{ page: any; notes: any[] }> {
+  await initBackupTables()
   const page = await dbBackup.backupPage.findUnique({ where: { id: pageId } })
   if (!page) throw new Error('Page not found')
   if (page.deletedAt) throw new Error('Page not found (deleted)')
@@ -1914,8 +1915,8 @@ export async function tursoGetPageNotes(pageId: string): Promise<{ page: any; no
   return { page: mapPageRow(page), notes: notes.map(mapPageNoteRow) }
 }
 
-export async function tursoGetBookNotes(bookId: string, trash = false): Promise<{ notes: any[] }> {
-  await initTursoTables()
+export async function getBackupBookNotes(bookId: string, trash = false): Promise<{ notes: any[] }> {
+  await initBackupTables()
   const notes = await dbBackup.backupPageNote.findMany({
     where: trash ? { bookId, deletedAt: { not: null } } : { bookId, deletedAt: null },
     orderBy: { createdAt: 'asc' },
@@ -1923,17 +1924,17 @@ export async function tursoGetBookNotes(bookId: string, trash = false): Promise<
   return { notes: notes.map(mapPageNoteRow) }
 }
 
-export async function tursoCreatePageNote(data: {
+export async function createBackupPageNote(data: {
   pageId: string
   content: string
   color?: string
 }): Promise<{ note: any }> {
-  await initTursoTables()
+  await initBackupTables()
   const page = await dbBackup.backupPage.findUnique({ where: { id: data.pageId } })
   if (!page) throw new Error('Page not found')
   if (page.deletedAt) throw new Error('Page not found (deleted)')
 
-  const id = `turso_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
+  const id = `backup_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
   const now = new Date()
   const color = data.color || 'amber'
 
@@ -1953,11 +1954,11 @@ export async function tursoCreatePageNote(data: {
   return { note: mapPageNoteRow(note) }
 }
 
-export async function tursoUpdatePageNote(
+export async function updateBackupPageNote(
   noteId: string,
   data: { content?: string; color?: string }
 ): Promise<{ note: any }> {
-  await initTursoTables()
+  await initBackupTables()
   const existing = await dbBackup.backupPageNote.findUnique({ where: { id: noteId } })
   if (!existing) throw new Error('Note not found')
   if (existing.deletedAt) throw new Error('This note is in the trash')
@@ -1974,8 +1975,8 @@ export async function tursoUpdatePageNote(
   return { note: mapPageNoteRow(note) }
 }
 
-export async function tursoDeletePageNote(noteId: string): Promise<{ note: any }> {
-  await initTursoTables()
+export async function deleteBackupPageNote(noteId: string): Promise<{ note: any }> {
+  await initBackupTables()
   const existing = await dbBackup.backupPageNote.findUnique({ where: { id: noteId } })
   if (!existing) throw new Error('Note not found')
   if (existing.deletedAt) return { note: mapPageNoteRow(existing) }
@@ -1989,8 +1990,8 @@ export async function tursoDeletePageNote(noteId: string): Promise<{ note: any }
   return { note: mapPageNoteRow(note) }
 }
 
-export async function tursoRestorePageNote(noteId: string): Promise<{ note: any }> {
-  await initTursoTables()
+export async function restoreBackupPageNote(noteId: string): Promise<{ note: any }> {
+  await initBackupTables()
   const existing = await dbBackup.backupPageNote.findUnique({ where: { id: noteId } })
   if (!existing) throw new Error('Note not found')
 
@@ -2002,11 +2003,11 @@ export async function tursoRestorePageNote(noteId: string): Promise<{ note: any 
   return { note: mapPageNoteRow(note) }
 }
 
-export async function tursoSearchNotes(query: string): Promise<{ notes: any[] }> {
-  await initTursoTables()
+export async function searchBackupNotes(query: string): Promise<{ notes: any[] }> {
+  await initBackupTables()
   // Escape LIKE wildcards so q=%% can't dump the table. CockroachDB/Postgres
   // treats backslash as the default LIKE escape, same as MySQL here.
-  // (Prisma `contains` adds its own %…% wrapping — pass the bare pattern.)
+  // (Prisma `contains` adds its own %Ã¢â‚¬Â¦% wrapping Ã¢â‚¬â€ pass the bare pattern.)
   const found = await dbBackup.backupPageNote.findMany({
     where: { content: { contains: escapeLikeWildcards(String(query)) }, deletedAt: null },
     orderBy: { createdAt: 'desc' },

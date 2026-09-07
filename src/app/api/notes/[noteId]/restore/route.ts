@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { dbNotes } from '@/lib/db'
-import { withTiDBFallback, tursoRestorePageNote, replicateNoteUpsert, isNotFoundError } from '@/lib/turso'
+import { withTiDBFallback, restoreBackupPageNote, replicateNoteUpsert, isNotFoundError } from '@/lib/backup-engine'
 import { logActivity } from '@/lib/logger'
 import { requireAdmin } from '@/lib/auth'
 import { rlWrite } from '@/lib/rate-limit'
@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic'
  * POST /api/notes/[noteId]/restore
  * Reverts a soft-deleted margin note.
  * Primary: TiDB Notes cluster.
- * Failover: Turso backup database.
+ * Failover: CockroachDB backup database.
  */
 export async function POST(
   req: NextRequest,
@@ -51,7 +51,7 @@ export async function POST(
         return { note }
       },
       async () => {
-        return await tursoRestorePageNote(noteId)
+        return await restoreBackupPageNote(noteId)
       },
       `POST /api/notes/${noteId}/restore`,
       'notes'
@@ -70,7 +70,7 @@ export async function POST(
     if (isNotFoundError(err)) {
       return NextResponse.json({ error: 'Note not found' }, { status: 404 })
     }
-    console.error('[api/notes/[noteId]/restore] failed on both TiDB and Turso:', err)
+    console.error('[api/notes/[noteId]/restore] failed on both TiDB and CockroachDB:', err)
     return NextResponse.json({ error: 'Failed to restore note' }, { status: 500 })
   }
 }

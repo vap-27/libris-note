@@ -1,7 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 
 /**
- * Server-only identity crypto (Wave 1). Imported by src/lib/turso.ts only —
+ * Server-only identity crypto (Wave 1). Imported by src/lib/backup-engine.ts only â€”
  * NEVER from client components (node:crypto cannot ship to browsers).
  */
 

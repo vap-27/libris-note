@@ -2,15 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { dbNotes } from '@/lib/db'
 import {
   withTiDBFallback,
-  tursoUpdateBoardNote,
-  tursoDeleteBoardNote,
-  tursoPurgeBoardNote,
+  updateBackupBoardNote,
+  deleteBackupBoardNote,
+  purgeBackupBoardNote,
   replicateNoteUpsert,
   replicateBoardNoteDelete,
   replicateBoardNotePurge,
-  shouldShiftToTurso,
+  shouldShiftToBackup,
   isNotFoundError,
-} from '@/lib/turso'
+} from '@/lib/backup-engine'
 import { logActivity } from '@/lib/logger'
 import { requireAdmin } from '@/lib/auth'
 import { rlWrite } from '@/lib/rate-limit'
@@ -25,9 +25,9 @@ function clampNum(v: number, min: number, max: number) {
 }
 
 /** PATCH /api/board/[noteId]  { content?, color?, x?, y?, width?, height?, rotation?, z?, pinned? }
- * Updates a board note — used for drag, resize, edit, recolor, re-order, pin/unpin.
+ * Updates a board note Ã¢â‚¬â€ used for drag, resize, edit, recolor, re-order, pin/unpin.
  * Primary: TiDB Notes cluster.
- * Failover: Turso backup database.
+ * Failover: CockroachDB backup database.
  */
 export async function PATCH(
   req: NextRequest,
@@ -92,13 +92,13 @@ export async function PATCH(
         return { note }
       },
       async () => {
-        return await tursoUpdateBoardNote(noteId, data)
+        return await updateBackupBoardNote(noteId, data)
       },
       `PATCH /api/board/${noteId}`,
       'notes'
     )
 
-    const isShifted = shouldShiftToTurso('notes')
+    const isShifted = shouldShiftToBackup('notes')
     logActivity({
       action: 'edit',
       title: 'Board Note Edited',
@@ -115,7 +115,7 @@ export async function PATCH(
     if (isNotFoundError(err)) {
       return NextResponse.json({ error: 'Board note not found' }, { status: 404 })
     }
-    console.error('[api/board/[noteId]] PATCH failed on both TiDB and Turso:', err)
+    console.error('[api/board/[noteId]] PATCH failed on both TiDB and CockroachDB:', err)
     return NextResponse.json({ error: 'Failed to update board note' }, { status: 500 })
   }
 }
@@ -126,7 +126,7 @@ export async function PATCH(
  * DELETE /api/board/[noteId]?hard=1 permanently purges a TRASHED note.
  * The hard path refuses live rows so a stale client can never skip trash.
  * Primary: TiDB Notes cluster.
- * Failover: Turso backup database.
+ * Failover: CockroachDB backup database.
  */
 export async function DELETE(
   req: NextRequest,
@@ -149,14 +149,14 @@ export async function DELETE(
           const existing = await dbNotes.boardNote.findUnique({ where: { id: noteId } })
           if (!existing) throw new Error('Note not found in TiDB')
           if (!existing.deletedAt) {
-            throw new Error('Move to trash first — only trashed notes can be purged')
+            throw new Error('Move to trash first Ã¢â‚¬â€ only trashed notes can be purged')
           }
           await dbNotes.boardNote.delete({ where: { id: noteId } })
           replicateBoardNotePurge(noteId).catch(() => {})
           return { purged: true, id: noteId }
         },
         async () => {
-          await tursoPurgeBoardNote(noteId)
+          await purgeBackupBoardNote(noteId)
           return { purged: true, id: noteId }
         },
         `DELETE /api/board/${noteId}?hard=1`,
@@ -188,7 +188,7 @@ export async function DELETE(
         return { note }
       },
       async () => {
-        return await tursoDeleteBoardNote(noteId)
+        return await deleteBackupBoardNote(noteId)
       },
       `DELETE /api/board/${noteId}`,
       'notes'
@@ -207,10 +207,10 @@ export async function DELETE(
     if (isNotFoundError(err)) {
       return NextResponse.json({ error: 'Board note not found' }, { status: 404 })
     }
-    if (err?.message === 'Move to trash first — only trashed notes can be purged') {
+    if (err?.message === 'Move to trash first Ã¢â‚¬â€ only trashed notes can be purged') {
       return NextResponse.json({ error: err.message }, { status: 409 })
     }
-    console.error('[api/board/[noteId]] DELETE failed on both TiDB and Turso:', err)
+    console.error('[api/board/[noteId]] DELETE failed on both TiDB and CockroachDB:', err)
     return NextResponse.json({ error: 'Failed to delete board note' }, { status: 500 })
   }
 }

@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { dbBooks, dbNotes } from '@/lib/db'
 import { dbBackup } from '@/lib/db-backup'
 import {
-  isTursoConfigured,
+  isBackupConfigured,
   getStorageShiftStatus,
   getBackupQuotaBytes,
   TIDB_LOW_STORAGE_THRESHOLD_BYTES,
-} from '@/lib/turso'
+} from '@/lib/backup-engine'
 import { getActivityLogs, logActivity, clearActivityLogs } from '@/lib/logger'
 import { requireAdmin, requireAdminForDestructive } from '@/lib/auth'
 import { rlRead, rlDestructive } from '@/lib/rate-limit'
@@ -23,7 +23,7 @@ const ALLOWED_FILTERS = new Set(['all', 'create', 'edit', 'delete', 'restore', '
 export async function GET(req: NextRequest) {
   const limited = await rlRead(req, 'health-get')
   if (limited) return limited
-  // Health exposes topology + logs — gate when ADMIN_TOKEN is configured.
+  // Health exposes topology + logs Ã¢â‚¬â€ gate when ADMIN_TOKEN is configured.
   const gate = requireAdmin(req)
   if (gate) return gate
 
@@ -53,8 +53,8 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const checkTurso = async () => {
-    if (!isTursoConfigured()) {
+  const checkBackup = async () => {
+    if (!isBackupConfigured()) {
       return { ok: false, status: 'not_configured', configured: false, latencyMs: 0 }
     }
     const start = Date.now()
@@ -77,30 +77,30 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const [books, notes, turso] = await Promise.all([
+  const [books, notes, backup] = await Promise.all([
     check('books', () => dbBooks.book.findFirst()),
     check('notes', () => dbNotes.boardNote.findFirst()),
-    checkTurso(),
+    checkBackup(),
   ])
 
   const shiftStatus = getStorageShiftStatus()
   const tidbHealthy = books.ok && notes.ok
-  const hasTurso = turso.ok
-  const serviceOperational = tidbHealthy || hasTurso
+  const hasBackup = backup.ok
+  const serviceOperational = tidbHealthy || hasBackup
 
   let status = 'ok'
   let mode = 'primary_tidb'
 
-  if (shiftStatus.books.shiftedToTurso || shiftStatus.notes.shiftedToTurso) {
+  if (shiftStatus.books.shiftedToBackup || shiftStatus.notes.shiftedToBackup) {
     status = 'ok'
-    mode = 'dynamic_shift_to_turso_active'
-  } else if (tidbHealthy && hasTurso) {
+    mode = 'dynamic_shift_to_backup_active'
+  } else if (tidbHealthy && hasBackup) {
     status = 'ok'
-    mode = 'primary_with_turso_overflow_standby'
-  } else if (!tidbHealthy && hasTurso) {
+    mode = 'primary_with_backup_overflow_standby'
+  } else if (!tidbHealthy && hasBackup) {
     status = 'ok'
-    mode = 'turso_failover_active'
-  } else if (tidbHealthy && !hasTurso) {
+    mode = 'backup_failover_active'
+  } else if (tidbHealthy && !hasBackup) {
     status = 'ok'
     mode = 'primary_tidb_only'
   } else {
@@ -123,9 +123,9 @@ export async function GET(req: NextRequest) {
         notes,
       },
       overflow: {
-        turso,
+        backup,
         thresholdBytes: TIDB_LOW_STORAGE_THRESHOLD_BYTES,
-        // Real backup ceiling (operator-overridable) — the dashboard must
+        // Real backup ceiling (operator-overridable) Ã¢â‚¬â€ the dashboard must
         // never hardcode this number.
         quotaBytes: getBackupQuotaBytes(),
         quotaSource: process.env.BACKUP_QUOTA_BYTES ? 'env-override' : 'cockroachdb-cloud-basic-10gib-default',
@@ -139,7 +139,7 @@ export async function GET(req: NextRequest) {
 }
 
 /**
- * POST /api/health  { action?: 'clear_logs' } — destructive, admin-only.
+ * POST /api/health  { action?: 'clear_logs' } Ã¢â‚¬â€ destructive, admin-only.
  */
 export async function POST(req: NextRequest) {
   try {

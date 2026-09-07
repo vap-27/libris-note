@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { dbBooks, dbNotes } from '@/lib/db'
-import { replicatePageUpsert, withTiDBFallback, tursoCreatePage, tursoGetFirstBookId, shouldShiftToTurso, isNotFoundError } from '@/lib/turso'
+import { replicatePageUpsert, withTiDBFallback, createBackupPage, getBackupFirstBookId, shouldShiftToBackup, isNotFoundError } from '@/lib/backup-engine'
 import { logActivity } from '@/lib/logger'
 import { requireAdmin } from '@/lib/auth'
 import { rlWrite, getIdempotentReplay, setIdempotentReplay, hashBody } from '@/lib/rate-limit'
@@ -11,8 +11,8 @@ export const dynamic = 'force-dynamic'
 const MAX_PAGES_PER_BOOK = 2000
 
 /**
- * Books cluster (TiDB A) — page CRUD for the writable book.
- * If TiDB is out of storage or down, automatically falls back to Turso.
+ * Books cluster (TiDB A) Ã¢â‚¬â€ page CRUD for the writable book.
+ * If TiDB is out of storage or down, automatically falls back to CockroachDB.
  */
 
 /** Margin notes after the insertion point slide up with the pages. Returns false on failure (H-4). */
@@ -45,7 +45,7 @@ async function firstBookId() {
  * Creates a new page. Without afterPageNumber the page is appended at the
  * end; with it, the page is inserted directly after that page number.
  * Primary: TiDB Books Cluster
- * Failover: Turso backup database
+ * Failover: CockroachDB backup database
  */
 export async function POST(req: NextRequest) {
   try {
@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
     const limited = await rlWrite(req, 'pages-create')
     if (limited) return limited
 
-    // Strict JSON: CSRF-hardening (L-1) — reject non-JSON simple-request smuggling.
+    // Strict JSON: CSRF-hardening (L-1) Ã¢â‚¬â€ reject non-JSON simple-request smuggling.
     const ct = req.headers.get('content-type') || ''
     if (ct && !ct.includes('application/json')) {
       return NextResponse.json({ error: 'Content-Type must be application/json' }, { status: 415 })
@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}))
     const rawContent = typeof body?.content === 'string' ? body.content.slice(0, 20000) : ''
     const rawTitle = typeof body?.title === 'string' ? body.title.slice(0, 200) : ''
-    // Sanitize editor HTML server-side (H-1) — stored XSS fix.
+    // Sanitize editor HTML server-side (H-1) Ã¢â‚¬â€ stored XSS fix.
     const content = sanitizePageHtml(rawContent, 20000)
     const title = sanitizePageHtml(rawTitle, 200).replace(/<[^>]*>/g, '').trim().slice(0, 200)
     const rawAfter =
@@ -159,23 +159,23 @@ export async function POST(req: NextRequest) {
         replicatePageUpsert(page).catch((e) => console.warn('[replicate] page upsert failed:', e?.message || e))
         if (usedAfter < usedMax) notesSyncOk = await syncNotesAfterInsert(bookId, usedAfter)
         if (!notesSyncOk) {
-          console.warn('[api/pages] notes shift failed after page insert — client should refreshNotes()')
+          console.warn('[api/pages] notes shift failed after page insert Ã¢â‚¬â€ client should refreshNotes()')
         }
         return { page, pages: await listPages(bookId), notesSyncOk }
       },
       async () => {
         const bookId =
           (typeof body?.bookId === 'string' && body.bookId) ||
-          (await tursoGetFirstBookId()) ||
+          (await getBackupFirstBookId()) ||
           'default-book'
-        const r = await tursoCreatePage(bookId, rawAfter, title, content)
+        const r = await createBackupPage(bookId, rawAfter, title, content)
         return { ...r, notesSyncOk: true }
       },
       'POST /api/pages',
       'books'
     )
 
-    const isShifted = shouldShiftToTurso('books')
+    const isShifted = shouldShiftToBackup('books')
     logActivity({
       action: 'create',
       title: 'Page Created',
@@ -193,7 +193,7 @@ export async function POST(req: NextRequest) {
     if (/too many pages|book is full/i.test(String(err?.message || ''))) {
       return NextResponse.json({ error: 'Book page limit reached' }, { status: 429 })
     }
-    console.error('[api/pages] POST failed on both TiDB and Turso:', err)
+    console.error('[api/pages] POST failed on both TiDB and CockroachDB:', err)
     return NextResponse.json({ error: 'Failed to create page' }, { status: 500 })
   }
 }

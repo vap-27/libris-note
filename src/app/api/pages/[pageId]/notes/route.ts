@@ -2,13 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { dbBooks, dbNotes } from '@/lib/db'
 import {
   withTiDBFallback,
-  tursoGetPageNotes,
-  tursoCreatePageNote,
+  getBackupPageNotes,
+  createBackupPageNote,
   replicateNoteUpsert,
   getMergedPageNotes,
-  shouldShiftToTurso,
+  shouldShiftToBackup,
   isNotFoundError,
-} from '@/lib/turso'
+} from '@/lib/backup-engine'
 import { logActivity } from '@/lib/logger'
 import { requireAdmin } from '@/lib/auth'
 import { rlRead, rlWrite, getIdempotentReplay, setIdempotentReplay, hashBody } from '@/lib/rate-limit'
@@ -22,8 +22,8 @@ const PAGE_NOTE_COLORS = ['amber', 'rose', 'sage', 'sky', 'lilac', 'butter']
  * GET /api/pages/[pageId]/notes
  * All margin notes for one page.
  * Primary: BOOKS cluster (page meta) + NOTES cluster (notes).
- * Dynamic Overflow: Merges notes shifted to Turso during low-storage mode.
- * Failover: Turso database.
+ * Dynamic Overflow: Merges notes shifted to CockroachDB during low-storage mode.
+ * Failover: CockroachDB database.
  */
 export async function GET(
   _req: NextRequest,
@@ -52,7 +52,7 @@ export async function GET(
         return { page, notes: merged }
       },
       async () => {
-        return await tursoGetPageNotes(pageId)
+        return await getBackupPageNotes(pageId)
       },
       `GET /api/pages/${pageId}/notes`,
       'notes'
@@ -63,7 +63,7 @@ export async function GET(
     if (isNotFoundError(err)) {
       return NextResponse.json({ error: 'Page not found' }, { status: 404 })
     }
-    console.error('[api/pages/[pageId]/notes] GET failed on both TiDB and Turso:', err)
+    console.error('[api/pages/[pageId]/notes] GET failed on both TiDB and CockroachDB:', err)
     return NextResponse.json({ error: 'Failed to load page notes' }, { status: 500 })
   }
 }
@@ -72,7 +72,7 @@ export async function GET(
  * POST /api/pages/[pageId]/notes  { content, color }
  * Creates a margin note on the page.
  * Primary: TiDB Notes cluster (with books check).
- * Failover: Turso backup database.
+ * Failover: CockroachDB backup database.
  */
 export async function POST(
   req: NextRequest,
@@ -134,13 +134,13 @@ export async function POST(
         return { note }
       },
       async () => {
-        return await tursoCreatePageNote({ pageId, content, color })
+        return await createBackupPageNote({ pageId, content, color })
       },
       `POST /api/pages/${pageId}/notes`,
       'notes'
     )
 
-    const isShifted = shouldShiftToTurso('notes')
+    const isShifted = shouldShiftToBackup('notes')
     logActivity({
       action: 'create',
       title: 'Margin Note Created',
@@ -155,7 +155,7 @@ export async function POST(
     if (isNotFoundError(err)) {
       return NextResponse.json({ error: 'Page not found' }, { status: 404 })
     }
-    console.error('[api/pages/[pageId]/notes] POST failed on both TiDB and Turso:', err)
+    console.error('[api/pages/[pageId]/notes] POST failed on both TiDB and CockroachDB:', err)
     return NextResponse.json({ error: 'Failed to create note' }, { status: 500 })
   }
 }

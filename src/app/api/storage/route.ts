@@ -2,16 +2,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import { dbBooks, dbNotes } from '@/lib/db'
 import { dbBackup } from '@/lib/db-backup'
 import {
-  isTursoConfigured,
-  initTursoTables,
+  isBackupConfigured,
+  initBackupTables,
   getStorageShiftStatus,
   flushReplicationQueue,
   getReplicationStats,
   buildDivergence,
-  backupAllToTurso,
+  snapshotToBackup,
   getBackupDiskUsage,
   getBackupQuotaBytes,
-} from '@/lib/turso'
+} from '@/lib/backup-engine'
 import { getUsrinfoStats, getUsrinfoQuotaBytes } from '@/lib/usrinfo'
 import { requireAdmin, requireAdminForDestructive } from '@/lib/auth'
 import { rlRead, rlDestructive } from '@/lib/rate-limit'
@@ -24,7 +24,7 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
-  // Binary units throughout the codebase — label honestly as GiB.
+  // Binary units throughout the codebase Ã¢â‚¬â€ label honestly as GiB.
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GiB`
 }
 
@@ -51,10 +51,10 @@ export async function GET(req: NextRequest) {
 
   // 1. TiDB Books Cluster Telemetry (aggregates only).
   // HONESTY: LENGTH() measures bytes (CHAR_LENGTH undercounts multibyte
-  // text — proven live: 2185 chars vs 2205 bytes). All text columns are
+  // text Ã¢â‚¬â€ proven live: 2185 chars vs 2205 bytes). All text columns are
   // summed; scalars get a per-row allowance; +32 KiB covers table overhead.
   // This is still an ESTIMATE (indexes/billed logical size invisible from
-  // SQL on Serverless) — hence bytesMeasured:false + method below.
+  // SQL on Serverless) Ã¢â‚¬â€ hence bytesMeasured:false + method below.
   let tidbBooksOk = false
   let tidbBooksLatency = 0
   let tidbBooksCount = 0
@@ -70,7 +70,7 @@ export async function GET(req: NextRequest) {
       dbBooks.page.count(),
       dbBooks.page.count({ where: { deletedAt: null } }),
     ])
-    // Bounded byte estimate via SQL SUM(LENGTH) — no full-table load.
+    // Bounded byte estimate via SQL SUM(LENGTH) Ã¢â‚¬â€ no full-table load.
     let bytes = 32 * 1024
     try {
       const rows = await dbBooks.$queryRaw<Array<{ b: bigint | number | null; p: bigint | number | null }>>`
@@ -94,7 +94,7 @@ export async function GET(req: NextRequest) {
     console.warn('[api/storage] TiDB Books cluster error')
   }
 
-  // 2. TiDB Notes Cluster Telemetry (same honesty contract as §1).
+  // 2. TiDB Notes Cluster Telemetry (same honesty contract as Ã‚Â§1).
   let tidbNotesOk = false
   let tidbNotesLatency = 0
   let tidbPageNotesCount = 0
@@ -134,26 +134,26 @@ export async function GET(req: NextRequest) {
     console.warn('[api/storage] TiDB Notes cluster error')
   }
 
-  // 3. CockroachDB backup telemetry — REAL measurements only.
+  // 3. CockroachDB backup telemetry Ã¢â‚¬â€ REAL measurements only.
   // Row counts via COUNT(*); bytes via octet_length content sums (actual
   // stored bytes measured in SQL). No count*1024 estimates anywhere here.
-  let tursoOk = false
-  let tursoLatency = 0
-  let tursoBooksCount = 0
-  let tursoPagesCount = 0
-  let tursoPagesLiveCount = 0
-  let tursoPageNotesCount = 0
-  let tursoPageNotesLiveCount = 0
-  let tursoBoardNotesCount = 0
-  let tursoBoardNotesLiveCount = 0
-  let tursoLastBackupAt: string | null = null
-  let tursoBytes = 0
-  let tursoBytesMeasured = false
+  let backupOk = false
+  let backupLatency = 0
+  let backupBooksCount = 0
+  let backupPagesCount = 0
+  let backupPagesLiveCount = 0
+  let backupPageNotesCount = 0
+  let backupPageNotesLiveCount = 0
+  let backupBoardNotesCount = 0
+  let backupBoardNotesLiveCount = 0
+  let backupLastBackupAt: string | null = null
+  let backupBytes = 0
+  let backupBytesMeasured = false
 
-  if (isTursoConfigured()) {
-    const startTurso = Date.now()
+  if (isBackupConfigured()) {
+    const startBackup = Date.now()
     try {
-      await initTursoTables()
+      await initBackupTables()
       const [booksCount, pagesCount, pagesLiveCount, pageNotesCount, pageNotesLiveCount, boardNotesCount, boardNotesLiveCount, meta, disk] = await Promise.all([
         dbBackup.backupBook.count(),
         dbBackup.backupPage.count(),
@@ -166,19 +166,19 @@ export async function GET(req: NextRequest) {
         getBackupDiskUsage(),
       ])
 
-      tursoOk = true
-      tursoLatency = Date.now() - startTurso
-      tursoBooksCount = booksCount
-      tursoPagesCount = pagesCount
-      tursoPagesLiveCount = pagesLiveCount
-      tursoPageNotesCount = pageNotesCount
-      tursoPageNotesLiveCount = pageNotesLiveCount
-      tursoBoardNotesCount = boardNotesCount
-      tursoBoardNotesLiveCount = boardNotesLiveCount
-      tursoLastBackupAt = meta?.value ?? null
+      backupOk = true
+      backupLatency = Date.now() - startBackup
+      backupBooksCount = booksCount
+      backupPagesCount = pagesCount
+      backupPagesLiveCount = pagesLiveCount
+      backupPageNotesCount = pageNotesCount
+      backupPageNotesLiveCount = pageNotesLiveCount
+      backupBoardNotesCount = boardNotesCount
+      backupBoardNotesLiveCount = boardNotesLiveCount
+      backupLastBackupAt = meta?.value ?? null
       if (disk.ok) {
-        tursoBytes = disk.totalBytes
-        tursoBytesMeasured = true
+        backupBytes = disk.totalBytes
+        backupBytesMeasured = true
       }
     } catch (err) {
       console.warn('[api/storage] CockroachDB telemetry error')
@@ -214,7 +214,7 @@ export async function GET(req: NextRequest) {
     ? ('env-override' as const)
     : ('tidb-starter-5gib-row-default' as const)
 
-  // 4. Quotas & Aggregations — every ceiling labeled with its source.
+  // 4. Quotas & Aggregations Ã¢â‚¬â€ every ceiling labeled with its source.
   const TIDB_CLUSTER_QUOTA_BYTES = 5 * 1024 * 1024 * 1024 // 5 GB
   const BACKUP_QUOTA_BYTES = getBackupQuotaBytes()
   const backupQuotaSource = process.env.BACKUP_QUOTA_BYTES
@@ -222,7 +222,7 @@ export async function GET(req: NextRequest) {
     : ('cockroachdb-cloud-basic-10gib-default' as const)
 
   const TOTAL_INFRASTRUCTURE_QUOTA_BYTES = TIDB_CLUSTER_QUOTA_BYTES * 2 + BACKUP_QUOTA_BYTES
-  const totalUsedBytes = tidbBooksBytes + tidbNotesBytes + tursoBytes
+  const totalUsedBytes = tidbBooksBytes + tidbNotesBytes + backupBytes
   const totalAvailableBytes = Math.max(0, TOTAL_INFRASTRUCTURE_QUOTA_BYTES - totalUsedBytes)
   const totalPercentUsed = Number(((totalUsedBytes / TOTAL_INFRASTRUCTURE_QUOTA_BYTES) * 100).toFixed(4))
 
@@ -230,13 +230,13 @@ export async function GET(req: NextRequest) {
     timestamp: new Date().toISOString(),
     queryDurationMs: Date.now() - t0,
     overall: {
-      status: tidbBooksOk && tidbNotesOk ? 'healthy' : tursoOk ? 'failover_active' : 'degraded',
+      status: tidbBooksOk && tidbNotesOk ? 'healthy' : backupOk ? 'failover_active' : 'degraded',
       failoverMode: tidbBooksOk && tidbNotesOk ? 'standby' : 'active',
       totalQuotaBytes: TOTAL_INFRASTRUCTURE_QUOTA_BYTES,
       totalQuotaFormatted: formatBytes(TOTAL_INFRASTRUCTURE_QUOTA_BYTES),
-      // UsrInfo's Turso side-quota is tracked separately (see `usrinfo`
+      // Users-cluster side-quota is tracked separately (see `usrinfo`
       // block) and intentionally excluded from this total.
-      quotaNote: 'TiDB ×3 (books, notes, users) + CockroachDB; users-cluster quota tracked in `usrinfo` block',
+      quotaNote: 'TiDB Ãƒâ€”3 (books, notes, users) + CockroachDB; users-cluster quota tracked in `usrinfo` block',
       totalUsedBytes,
       totalUsedFormatted: formatBytes(totalUsedBytes),
       totalAvailableBytes,
@@ -291,41 +291,41 @@ export async function GET(req: NextRequest) {
         },
       },
     },
-    turso: {
+    backup: {
       label: 'CockroachDB Backup Engine',
-      status: tursoOk ? 'online' : 'offline',
-      latencyMs: tursoLatency,
+      status: backupOk ? 'online' : 'offline',
+      latencyMs: backupLatency,
       quotaBytes: BACKUP_QUOTA_BYTES,
       quotaFormatted: formatBytes(BACKUP_QUOTA_BYTES),
       // Honest ceiling: plan default unless the operator overrode it.
       quotaSource: backupQuotaSource,
       // Honest usage: measured on disk, or explicitly unmeasured.
-      usedBytes: tursoBytes,
-      usedFormatted: tursoBytesMeasured ? formatBytes(tursoBytes) : 'unmeasured',
-      bytesMeasured: tursoBytesMeasured,
-      availableBytes: Math.max(0, BACKUP_QUOTA_BYTES - tursoBytes),
-      availableFormatted: tursoBytesMeasured
-        ? formatBytes(Math.max(0, BACKUP_QUOTA_BYTES - tursoBytes))
+      usedBytes: backupBytes,
+      usedFormatted: backupBytesMeasured ? formatBytes(backupBytes) : 'unmeasured',
+      bytesMeasured: backupBytesMeasured,
+      availableBytes: Math.max(0, BACKUP_QUOTA_BYTES - backupBytes),
+      availableFormatted: backupBytesMeasured
+        ? formatBytes(Math.max(0, BACKUP_QUOTA_BYTES - backupBytes))
         : 'unmeasured',
-      percentUsed: tursoBytesMeasured
-        ? Number(((tursoBytes / BACKUP_QUOTA_BYTES) * 100).toFixed(4))
+      percentUsed: backupBytesMeasured
+        ? Number(((backupBytes / BACKUP_QUOTA_BYTES) * 100).toFixed(4))
         : 0,
-      lastBackupAt: tursoLastBackupAt,
+      lastBackupAt: backupLastBackupAt,
       tables: {
-        books: tursoBooksCount,
-        pages: tursoPagesCount,
-        pagesLive: tursoPagesLiveCount,
-        pagesTombstoned: tursoPagesCount - tursoPagesLiveCount,
-        pageNotes: tursoPageNotesCount,
-        pageNotesLive: tursoPageNotesLiveCount,
-        pageNotesTombstoned: tursoPageNotesCount - tursoPageNotesLiveCount,
-        boardNotes: tursoBoardNotesCount,
-        boardNotesLive: tursoBoardNotesLiveCount,
-        boardNotesTombstoned: tursoBoardNotesCount - tursoBoardNotesLiveCount,
+        books: backupBooksCount,
+        pages: backupPagesCount,
+        pagesLive: backupPagesLiveCount,
+        pagesTombstoned: backupPagesCount - backupPagesLiveCount,
+        pageNotes: backupPageNotesCount,
+        pageNotesLive: backupPageNotesLiveCount,
+        pageNotesTombstoned: backupPageNotesCount - backupPageNotesLiveCount,
+        boardNotes: backupBoardNotesCount,
+        boardNotesLive: backupBoardNotesLiveCount,
+        boardNotesTombstoned: backupBoardNotesCount - backupBoardNotesLiveCount,
       },
     },
     usrinfo: {
-      label: 'Users Store (TiDB users_db) — identities, presence, page leases',
+      label: 'Users Store (TiDB users_db) Ã¢â‚¬â€ identities, presence, page leases',
       status: usrinfoStatus,
       latencyMs: usrinfoLatency,
       quotaBytes: USRINFO_QUOTA_BYTES,
@@ -358,13 +358,13 @@ export async function GET(req: NextRequest) {
           boardNotes: tidbBoardNotesCount,
         },
         {
-          books: tursoBooksCount,
-          pages: tursoPagesCount,
-          pageNotes: tursoPageNotesCount,
-          boardNotes: tursoBoardNotesCount,
+          books: backupBooksCount,
+          pages: backupPagesCount,
+          pageNotes: backupPageNotesCount,
+          boardNotes: backupBoardNotesCount,
         }
       ),
-      repairHint: 'POST /api/storage {"action":"repair"} runs a full TiDB → CockroachDB snapshot to heal drift.',
+      repairHint: 'POST /api/storage {"action":"repair"} runs a full TiDB Ã¢â€ â€™ CockroachDB snapshot to heal drift.',
     },
   }
 
@@ -378,7 +378,7 @@ export async function GET(req: NextRequest) {
 
 /**
  * POST /api/storage  { action: 'repair' }
- * One-click drift repair: full snapshot TiDB → CockroachDB (same engine as /api/backup).
+ * One-click drift repair: full snapshot TiDB Ã¢â€ â€™ CockroachDB (same engine as /api/backup).
  */
 export async function POST(req: NextRequest) {
   try {
@@ -389,7 +389,7 @@ export async function POST(req: NextRequest) {
     if (gate) return gate
     const body = await req.json().catch(() => ({}))
     // Permanent prune: hard-delete page tombstones older than N days from
-    // BOTH engines. Explicit operator action only — never automatic.
+    // BOTH engines. Explicit operator action only Ã¢â‚¬â€ never automatic.
     if (body?.action === 'prune') {
       const days = Math.min(3650, Math.max(1, Math.floor(Number(body?.olderThanDays ?? 30))))
       if (!Number.isFinite(days)) {
@@ -397,19 +397,19 @@ export async function POST(req: NextRequest) {
       }
       const cutoff = new Date(Date.now() - days * 86400000)
       const tidbPruned = await dbBooks.page.deleteMany({ where: { deletedAt: { lt: cutoff } } })
-      let tursoPruned = 0
-      if (isTursoConfigured()) {
-        await initTursoTables()
+      let backupPruned = 0
+      if (isBackupConfigured()) {
+        await initBackupTables()
         const res = await dbBackup.backupPage.deleteMany({
           where: { deletedAt: { not: null, lt: cutoff } },
         })
-        tursoPruned = res.count
+        backupPruned = res.count
       }
       // Diagnostic log retention (Wave E): system_logs is append-only with no
-      // TTL — prune entries older than 30 days alongside tombstones.
+      // TTL Ã¢â‚¬â€ prune entries older than 30 days alongside tombstones.
       // Timestamps are ISO strings; lexical comparison is chronological.
       let logsPruned = 0
-      if (isTursoConfigured()) {
+      if (isBackupConfigured()) {
         try {
           const cutoffLogs = new Date(Date.now() - 30 * 86400000).toISOString()
           const lr = await dbBackup.systemLog.deleteMany({
@@ -425,7 +425,7 @@ export async function POST(req: NextRequest) {
         action: 'delete',
         title: 'Tombstones Pruned',
         details: sanitizeLogText(
-          `Hard-deleted ${tidbPruned.count} TiDB + ${tursoPruned} CockroachDB tombstoned pages older than ${days}d; ${logsPruned} log rows expired`
+          `Hard-deleted ${tidbPruned.count} TiDB + ${backupPruned} CockroachDB tombstoned pages older than ${days}d; ${logsPruned} log rows expired`
         ),
         engine: 'System',
         level: 'warn',
@@ -433,18 +433,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         message: `Pruned tombstones older than ${days} days`,
         tidb: tidbPruned.count,
-        turso: tursoPruned,
+        backup: backupPruned,
         logsExpired: logsPruned,
       })
     }
     if (body?.action !== 'repair') {
       return NextResponse.json({ error: 'Unknown action (expected {"action":"repair"} or {"action":"prune"})' }, { status: 400 })
     }
-    if (!isTursoConfigured()) {
+    if (!isBackupConfigured()) {
       return NextResponse.json({ error: 'Backup engine is not configured' }, { status: 400 })
     }
     cache = null
-    const result = await backupAllToTurso()
+    const result = await snapshotToBackup()
     logActivity({
       action: 'sync',
       title: 'Drift Repair Run',

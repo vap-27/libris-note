@@ -1,42 +1,41 @@
 /**
  * CLI tool for CockroachDB backup and recovery
  * Usage:
- *   npx tsx scripts/turso-backup.ts status
- *   npx tsx scripts/turso-backup.ts backup
- *   npx tsx scripts/turso-backup.ts restore
- *   npx tsx scripts/turso-backup.ts init
- * (Script name is historical; every command below hits CockroachDB.)
+ *   npx tsx scripts/backup.ts status
+ *   npx tsx scripts/backup.ts backup
+ *   npx tsx scripts/backup.ts restore
+ *   npx tsx scripts/backup.ts init
  */
 import {
-  initTursoTables,
-  backupAllToTurso,
-  restoreAllFromTurso,
-  getTursoBackupStats,
-  isTursoConfigured,
-} from '../src/lib/turso'
+  initBackupTables,
+  snapshotToBackup,
+  restoreFromBackup,
+  getBackupStats,
+  isBackupConfigured,
+} from '../src/lib/backup-engine'
 
 async function main() {
   const cmd = process.argv[2] || 'status'
 
-  if (!isTursoConfigured()) {
-    console.error('❌ BACKUP_DATABASE_URL is missing in .env')
+  if (!isBackupConfigured()) {
+    console.error('âŒ BACKUP_DATABASE_URL is missing in .env')
     process.exit(1)
   }
 
-  console.log(`\n── Libris CockroachDB Backup Tool [${cmd}] ──`)
+  console.log(`\nâ”€â”€ Libris CockroachDB Backup Tool [${cmd}] â”€â”€`)
 
   switch (cmd) {
     case 'init': {
-      console.log('Backup schema is managed by prisma db push (see npm run db:push:backup) — nothing to init.')
-      await initTursoTables()
-      console.log('✅ Backup engine reachable.')
+      console.log('Backup schema is managed by prisma db push (see npm run db:push:backup) â€” nothing to init.')
+      await initBackupTables()
+      console.log('âœ… Backup engine reachable.')
       break
     }
 
     case 'backup': {
       console.log('Running snapshot backup from TiDB -> CockroachDB...')
-      const res = await backupAllToTurso()
-      console.log('✅ Backup complete!')
+      const res = await snapshotToBackup()
+      console.log('âœ… Backup complete!')
       console.log('   Books backed up:', res.stats.books)
       console.log('   Pages backed up:', res.stats.pages)
       console.log('   Page notes backed up:', res.stats.pageNotes)
@@ -47,8 +46,8 @@ async function main() {
 
     case 'restore': {
       console.log('Restoring data from CockroachDB -> TiDB...')
-      const res = await restoreAllFromTurso()
-      console.log('✅ Restore complete!')
+      const res = await restoreFromBackup()
+      console.log('âœ… Restore complete!')
       console.log('   Books restored:', res.restored.books)
       console.log('   Pages restored:', res.restored.pages)
       console.log('   Page notes restored:', res.restored.pageNotes)
@@ -58,8 +57,8 @@ async function main() {
 
     case 'status':
     default: {
-      const stats = await getTursoBackupStats()
-      console.log('📊 CockroachDB Backup Status:')
+      const stats = await getBackupStats()
+      console.log('ðŸ“Š CockroachDB Backup Status:')
       console.log('   Configured:', stats.configured)
       console.log('   Books in backup:', stats.booksCount)
       console.log('   Pages in backup:', stats.pagesCount)
@@ -73,6 +72,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error('❌ Error executing backup command:', err)
+  console.error('âŒ Error executing backup command:', err)
   process.exit(1)
 })

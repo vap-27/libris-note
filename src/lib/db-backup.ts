@@ -3,7 +3,7 @@ import { PrismaClient as BackupPrismaClient } from '@/generated/backup-client'
 /**
  * Backup engine cluster: CockroachDB — snapshots, restore source, shift
  * overflow writes, replication mirror, activity logs. Replaces the old
- * Turso backup database in all of those roles.
+ * (decommissioned) Turso backup database in all of those roles.
  */
 
 const globalForBackup = globalThis as unknown as {

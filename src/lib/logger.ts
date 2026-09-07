@@ -1,4 +1,4 @@
-import { isTursoConfigured, initTursoTables } from './turso'
+import { isBackupConfigured, initBackupTables } from './backup-engine'
 import { dbBackup } from './db-backup'
 import { sanitizeLogText } from './sanitize'
 
@@ -60,7 +60,7 @@ export function logActivity(entry: {
   }
 
   // Asynchronously persist to CockroachDB system_logs
-  if (isTursoConfigured()) {
+  if (isBackupConfigured()) {
     dbBackup.systemLog
       .upsert({
         where: { id: log.id },
@@ -89,9 +89,9 @@ export function logActivity(entry: {
  * falling back to in-memory cache if the backup DB is temporarily unreachable.
  */
 export async function getActivityLogs(limit = 50, actionFilter?: string): Promise<ActivityLog[]> {
-  if (isTursoConfigured()) {
+  if (isBackupConfigured()) {
     try {
-      await initTursoTables().catch(() => {})
+      await initBackupTables().catch(() => {})
       const rows = await dbBackup.systemLog.findMany({
         where: actionFilter && actionFilter !== 'all' ? { action: actionFilter } : undefined,
         orderBy: { timestamp: 'desc' },
@@ -131,7 +131,7 @@ export async function getActivityLogs(limit = 50, actionFilter?: string): Promis
  */
 export async function clearActivityLogs(): Promise<void> {
   activityLogs.length = 0
-  if (isTursoConfigured()) {
+  if (isBackupConfigured()) {
     try {
       await dbBackup.systemLog.deleteMany()
     } catch (err) {

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { dbBooks } from '@/lib/db'
-import { withTiDBFallback, tursoGetBookWithPages, getMergedBookPages } from '@/lib/turso'
+import { withTiDBFallback, getBackupBookWithPages, getMergedBookPages } from '@/lib/backup-engine'
 import { requireAdmin } from '@/lib/auth'
 import { rlRead } from '@/lib/rate-limit'
 
@@ -13,8 +13,8 @@ export const dynamic = 'force-dynamic'
  * `cursor` (a pageNumber) starts after it; response adds
  * `nextCursor: number|null`. Absent params = legacy unbounded behavior.
  * Primary: BOOKS TiDB cluster (cluster A).
- * Dynamic Overflow: Automatically merges pages shifted to Turso when TiDB is low on storage.
- * Failover: Turso database (libSQL) if TiDB is out of storage or down.
+ * Dynamic Overflow: Automatically merges pages shifted to CockroachDB when TiDB is low on storage.
+ * Failover: CockroachDB database (libSQL) if TiDB is out of storage or down.
  */
 export async function GET(req: NextRequest) {
   try {
@@ -43,8 +43,8 @@ export async function GET(req: NextRequest) {
           orderBy: { pageNumber: 'asc' },
           ...(limit != null ? { take: limit + 1 } : {}),
         })
-        // Merge with any pages shifted to Turso during low-storage mode.
-        // In paginated mode the merged list is windowed by cursor so Turso
+        // Merge with any pages shifted to CockroachDB during low-storage mode.
+        // In paginated mode the merged list is windowed by cursor so backup
         // rows can't duplicate across pages.
         const mergedPages = await getMergedBookPages(pages, book.id)
         let nextCursor: number | null = null
@@ -57,7 +57,7 @@ export async function GET(req: NextRequest) {
         return { book, pages: outPages, nextCursor }
       },
       async () => {
-        const fb = await tursoGetBookWithPages()
+        const fb = await getBackupBookWithPages()
         return { ...fb, nextCursor: null as number | null }
       },
       'GET /api/book',
@@ -66,7 +66,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(data)
   } catch (err) {
-    console.error('[api/book] GET failed on both TiDB and Turso:', err)
+    console.error('[api/book] GET failed on both TiDB and CockroachDB:', err)
     return NextResponse.json({ error: 'Failed to load book' }, { status: 500 })
   }
 }

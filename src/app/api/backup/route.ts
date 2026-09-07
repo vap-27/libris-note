@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
 import {
-  backupAllToTurso,
-  restoreAllFromTurso,
-  getTursoBackupStats,
-  isTursoConfigured,
-} from '@/lib/turso'
+  snapshotToBackup,
+  restoreFromBackup,
+  getBackupStats,
+  isBackupConfigured,
+} from '@/lib/backup-engine'
 import { requireAdminForDestructive, requireAdmin } from '@/lib/auth'
 import { rlRead, rlDestructive } from '@/lib/rate-limit'
 import { logActivity } from '@/lib/logger'
@@ -14,11 +14,11 @@ export async function GET(req: Request) {
   try {
     const limited = await rlRead(req, 'backup-status')
     if (limited) return limited
-    // Telemetry is sensitive (counts/topology) — gate when admin auth is configured.
+    // Telemetry is sensitive (counts/topology) â€” gate when admin auth is configured.
     const gate = requireAdmin(req as any)
     if (gate) return gate
 
-    const configured = isTursoConfigured()
+    const configured = isBackupConfigured()
     if (!configured) {
       return NextResponse.json({
         configured: false,
@@ -26,7 +26,7 @@ export async function GET(req: Request) {
       })
     }
 
-    const stats = await getTursoBackupStats()
+    const stats = await getBackupStats()
     return NextResponse.json({
       configured: true,
       stats,
@@ -44,7 +44,7 @@ export async function POST(req: Request) {
     const gate = requireAdminForDestructive(req as any)
     if (gate) return gate
 
-    if (!isTursoConfigured()) {
+    if (!isBackupConfigured()) {
       return NextResponse.json(
         { error: 'Backup engine is not configured' },
         { status: 400 },
@@ -72,7 +72,7 @@ export async function POST(req: Request) {
           { status: 400 }
         )
       }
-      const result = await restoreAllFromTurso({ force })
+      const result = await restoreFromBackup({ force })
       logActivity({
         action: 'restore',
         title: 'Snapshot Restored',
@@ -88,7 +88,7 @@ export async function POST(req: Request) {
       })
     }
 
-    const result = await backupAllToTurso()
+    const result = await snapshotToBackup()
     logActivity({
       action: 'backup',
       title: 'Snapshot Backed Up',

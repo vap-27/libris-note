@@ -45,12 +45,12 @@ open mode. See `src/lib/auth.ts`.
 - `BoardNote`: id, content, color, type (`sticky`|`card`), x, y, width,
   height, rotation, z, pinned, `deletedAt` (trash), timestamps.
 
-### CockroachDB backup engine — `src/lib/turso.ts` front + `src/lib/db-backup.ts`
+### CockroachDB backup engine — `src/lib/backup-engine.ts` front + `src/lib/db-backup.ts`
 `books`, `pages` (+`deletedAt`), `page_notes`, `board_notes`,
 `system_logs` (audit), `backup_meta(last_backup_at)`. The backup engine
 mirrors TiDB including tombstones; it is the **only** place hard-deleted
-TiDB rows can still exist (until `prune`). Export names (`turso*`,
-`isTursoConfigured`, …) are historical — every byte goes to CockroachDB.
+TiDB rows can still exist (until `prune`). (History: this module was once
+`turso.ts` on Turso LibSQL, now decommissioned — exports renamed to `backup*`.)
 
 ### Users store — `src/lib/usrinfo.ts` + `prisma/schema-users.prisma` (`users_db`)
 `identities` (name + PIN hash), `presence` (heartbeats), `page_locks`
@@ -130,7 +130,7 @@ words into page B after a fast turn.
 
 ## 5. Storage engine: shift, replication, backup
 
-- **Dynamic shift** (`shouldShiftToTurso`, `getStorageShiftStatus`): per-domain
+- **Dynamic shift** (`shouldShiftToBackup`, `getStorageShiftStatus`): per-domain
   remaining-bytes = operator override (`TIDB_*_REMAINING_BYTES`) → live
   `information_schema` probe (60s cache, fire-and-forget refresh) → ~5GB
   default. Under 10MB remaining (1MB critical) writes route straight to
@@ -195,7 +195,7 @@ words into page B after a fast turn.
 | `npm run db:push` / `db:generate` | push Prisma schemas + regen clients (all four engines) |
 | `npm run db:push:backup` | push the CockroachDB backup schema + regen its client |
 | `npm run seed` | stable-id upsert of printed pages (never wipes); guarded by `ALLOW_DESTRUCTIVE_SCRIPT=1` (same guard: `clear-notes`, `restore-demo`) |
-| `npm run backup:*` | init / run / restore / status against CockroachDB (live-DB scripts, **not** CI; `turso:*` aliases are historical names) |
+| `npm run backup:*` | init / run / restore / status / test-failover against CockroachDB (live-DB scripts, **not** CI) |
 
 Env essentials: `BOOKS/NOTES_DATABASE_URL`, `USERS_DATABASE_URL`,
 `BACKUP_DATABASE_URL`, `USRINFO_*` (dead — Turso decommissioned), optional

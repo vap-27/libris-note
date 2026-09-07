@@ -61,7 +61,7 @@ interface HealthResponse {
       remainingBytes: number
       isUnder10MB: boolean
       isUnder1MB?: boolean
-      shiftedToTurso: boolean
+      shiftedToBackup: boolean
       targetEngine: string
       quotaBytes?: number
     }
@@ -69,7 +69,7 @@ interface HealthResponse {
       remainingBytes: number
       isUnder10MB: boolean
       isUnder1MB?: boolean
-      shiftedToTurso: boolean
+      shiftedToBackup: boolean
       targetEngine: string
       quotaBytes?: number
     }
@@ -92,7 +92,7 @@ interface HealthResponse {
     }
   }
   overflow: {
-    turso: {
+    backup: {
       ok: boolean
       status: string
       configured: boolean
@@ -108,9 +108,9 @@ interface HealthResponse {
   checkedAt: string
 }
 
-/** Quota bytes → "5.00 GiB". Falls back to '—' when the API omits it. */
+/** Quota bytes Ã¢â€ â€™ "5.00 GiB". Falls back to 'Ã¢â‚¬â€' when the API omits it. */
 function formatQuota(bytes: number | undefined | null): string {
-  if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes <= 0) return '—'
+  if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes <= 0) return 'Ã¢â‚¬â€'
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GiB`
 }
 
@@ -124,7 +124,7 @@ export default function HealthPage() {  const [health, setHealth] = useState<Hea
   const [liveUsers, setLiveUsers] = useState<
     Array<{ clientId: string; name: string; color: string; pageId: string | null; activity: string }>
   >([])
-  // Real infra totals ride along from /api/storage (never hardcoded — the
+  // Real infra totals ride along from /api/storage (never hardcoded Ã¢â‚¬â€ the
   // backup quota is operator-overridable, so a literal would lie).
   const [quotaTotal, setQuotaTotal] = useState<string | null>(null)
 
@@ -167,7 +167,7 @@ export default function HealthPage() {  const [health, setHealth] = useState<Hea
     }
   }, [])
 
-  // Initial load once on mount — fetches inline so setState only runs in
+  // Initial load once on mount Ã¢â‚¬â€ fetches inline so setState only runs in
   // the async continuation (subscription callback), not synchronously.
   useEffect(() => {
     let cancelled = false
@@ -235,7 +235,7 @@ export default function HealthPage() {  const [health, setHealth] = useState<Hea
   }
 
   const isShiftActive =
-    health?.shiftEngine.books.shiftedToTurso || health?.shiftEngine.notes.shiftedToTurso
+    health?.shiftEngine.books.shiftedToBackup || health?.shiftEngine.notes.shiftedToBackup
 
   const filteredLogs = (health?.activityLogs || []).filter((log) => {
     if (activeTab === 'all') return true
@@ -439,7 +439,7 @@ export default function HealthPage() {  const [health, setHealth] = useState<Hea
                 <div className="flex items-center gap-3 flex-wrap mb-1.5">
                   <h2 className="text-xl md:text-2xl font-serif text-[#f4efe6]">
                     {isShiftActive
-                      ? 'Dynamic Shift Active — Directing to CockroachDB'
+                      ? 'Dynamic Shift Active Ã¢â‚¬â€ Directing to CockroachDB'
                       : health?.operational
                       ? 'Dual-Engine High Availability Operational'
                       : 'System Degraded'}
@@ -485,7 +485,7 @@ export default function HealthPage() {  const [health, setHealth] = useState<Hea
 
               <div className="bg-black/30 p-3 rounded-xl border border-white/5 col-span-2 sm:col-span-1">
                 <div className="text-[10px] uppercase tracking-wider text-[#a89f91]">Combined Quota</div>
-                <div className="text-sm font-semibold text-white mt-0.5">{quotaTotal ?? '—'}</div>
+                <div className="text-sm font-semibold text-white mt-0.5">{quotaTotal ?? 'Ã¢â‚¬â€'}</div>
               </div>
 
               <div className="bg-black/30 p-3 rounded-xl border border-white/5 col-span-2 sm:col-span-1">
@@ -502,7 +502,7 @@ export default function HealthPage() {  const [health, setHealth] = useState<Hea
                         {liveUsers.slice(0, 6).map((u) => (
                           <span
                             key={u.clientId}
-                            title={`${u.name}${u.activity === 'editing' ? ' — writing' : ' — reading'}`}
+                            title={`${u.name}${u.activity === 'editing' ? ' Ã¢â‚¬â€ writing' : ' Ã¢â‚¬â€ reading'}`}
                             className="w-3.5 h-3.5 rounded-full border border-black/60"
                             style={{ backgroundColor: u.color }}
                           />
@@ -642,13 +642,13 @@ export default function HealthPage() {  const [health, setHealth] = useState<Hea
               </div>
               <span
                 className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                  health?.overflow.turso.ok
+                  health?.overflow.backup.ok
                     ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
                     : 'bg-red-500/10 text-red-400 border border-red-500/20'
                 }`}
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-current" />
-                {health?.overflow.turso.ok ? 'Online (Armed)' : 'Offline'}
+                {health?.overflow.backup.ok ? 'Online (Armed)' : 'Offline'}
               </span>
             </div>
 
@@ -656,7 +656,7 @@ export default function HealthPage() {  const [health, setHealth] = useState<Hea
               <div className="flex justify-between py-1 border-b border-white/5">
                 <span>Latency</span>
                 <span className="font-mono text-white font-medium">
-                  {health?.overflow.turso.latencyMs ?? '--'} ms
+                  {health?.overflow.backup.latencyMs ?? '--'} ms
                 </span>
               </div>
               <div className="flex justify-between py-1 border-b border-white/5">

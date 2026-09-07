@@ -63,7 +63,7 @@ const P = [
     section: 'System Guide',
     title: 'System Features & Storage',
     content:
-      '<p>System dashboards & controls:</p><p><br></p><p>• /health — Live cluster health & activity logs</p><p>• /storage — Live database telemetry & backups</p><p>• Dynamic Shift — Auto-shifts to Turso under 10MB</p><p>• Peak Protection — Emergency save under 1MB</p><p>• Felt Board — Draggable stickies & day slider</p><p>• Shortcuts — Press I for Index, Z for Zoom, Ctrl+E for Ink Editor</p><p><br></p><p>All changes persist across dual TiDB clusters.</p>',
+      '<p>System dashboards & controls:</p><p><br></p><p>• /health — Live cluster health & activity logs</p><p>• /storage — Live database telemetry & backups</p><p>• Dynamic Shift — Auto-shifts to CockroachDB under 10MB</p><p>• Peak Protection — Emergency save under 1MB</p><p>• Felt Board — Draggable stickies & day slider</p><p>• Shortcuts — Press I for Index, Z for Zoom, Ctrl+E for Ink Editor</p><p><br></p><p>All changes persist across dual TiDB clusters.</p>',
     pinned: true,
   },
 ]

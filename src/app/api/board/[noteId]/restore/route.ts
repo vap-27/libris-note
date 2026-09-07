@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { dbNotes } from '@/lib/db'
-import { withTiDBFallback, tursoRestoreBoardNote, replicateNoteUpsert, isNotFoundError } from '@/lib/turso'
+import { withTiDBFallback, restoreBackupBoardNote, replicateNoteUpsert, isNotFoundError } from '@/lib/backup-engine'
 import { logActivity } from '@/lib/logger'
 import { requireAdmin } from '@/lib/auth'
 import { rlWrite } from '@/lib/rate-limit'
@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic'
  * POST /api/board/[noteId]/restore
  * Reverts a soft-deleted board note.
  * Primary: TiDB Notes cluster.
- * Failover: Turso backup database.
+ * Failover: CockroachDB backup database.
  */
 export async function POST(
   req: NextRequest,
@@ -56,7 +56,7 @@ export async function POST(
         return { note }
       },
       async () => {
-        return await tursoRestoreBoardNote(noteId)
+        return await restoreBackupBoardNote(noteId)
       },
       `POST /api/board/${noteId}/restore`,
       'notes'
@@ -75,7 +75,7 @@ export async function POST(
     if (isNotFoundError(err)) {
       return NextResponse.json({ error: 'Board note not found' }, { status: 404 })
     }
-    console.error('[api/board/[noteId]/restore] failed on both TiDB and Turso:', err)
+    console.error('[api/board/[noteId]/restore] failed on both TiDB and CockroachDB:', err)
     return NextResponse.json({ error: 'Failed to restore board note' }, { status: 500 })
   }
 }
