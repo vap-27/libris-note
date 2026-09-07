@@ -8,7 +8,7 @@
 - **Web:** `src/app/layout.tsx` (`RootLayout`) → `src/app/page.tsx` (`Home` → `<BookApp/>`). No logic on `/` itself.
 - **Gate:** `src/middleware.ts` (matcher `/api/:path*`) — GET/HEAD/OPTIONS pass; other methods need matching `Origin/Referer` vs `Host` (`src/lib/csrf.ts`). Headerless clients (curl) pass.
 - **State zero:** `BookApp` boots in `front` phase → fetches `/api/book` → `/api/notes?bookId` → `/api/board` → probes `/api/health` → resolves identity from `localStorage` (all client-side, post-mount — never during SSR).
-- **Why here:** `BookApp` owns book/pages/margin-notes/presence/phases; `BoardView` and `NotesPanel` own and fetch their own lists (`BoardView` state + `fetch('/api/board')`, `NotesPanel` state + per-page fetches). Stage/faces/panels are otherwise views fed by props + callbacks.
+- **Why here:** `BookApp` owns book/pages/margin-notes/presence/phases; `BoardView` and `NotesPanel` own their own state and fetch directly, bypassing `BookApp` (`BoardView` state + `fetch('/api/board')`, `NotesPanel` state + per-page `fetch('/api/pages/[id]/notes')`). Stage/faces/panels are otherwise views fed by props + callbacks.
 
 ## 2. Execution flow
 
@@ -24,7 +24,7 @@
 4. Server lists always merge *over* `pendingEdits` — typing can never be clobbered.
 
 **A typical API write (`POST /api/pages`):**
-1. Auth + rate-limit (order varies: reads like `GET /api/board` go auth-first; destructive/restore routes limit *before* auth — no 401 oracle).
+1. Auth + rate-limit (order varies by route: content writes like `POST /api/pages` go auth-first; restore/empty-trash + telemetry `GET`s (`health`/`storage`/`backup`) limit *before* auth — no 401 oracle; `POST /api/identity` stays auth-first despite its destructive bucket).
 2. `requireAdmin` (open mode when `ADMIN_TOKEN` unset).
 3. Validate (strict JSON → 415) → sanitize HTML → idempotency-key replay check.
 4. `withTiDBFallback`/`withStorageShift`: TiDB primary, CockroachDB fallback (validation errors never fork).
@@ -39,7 +39,7 @@
 flowchart LR
     U[Browser: BookApp] -->|fetch same-origin JSON| M(middleware: CSRF gate)
     M --> R[API route]
-    R -->|rl*/requireAdmin| V[validate + sanitize]
+    R -->|rl*/requireAdmin, order varies by route| V[validate + sanitize]
     V --> E{shifted?}
     E -->|no| T[(TiDB primary)]
     E -->|yes| C[(CockroachDB backup)]
@@ -52,7 +52,7 @@ flowchart LR
 ## 3. Major components / modules
 
 - `src/app/page.tsx`, `layout.tsx` — root shell, fonts, toaster, global CSS.
-- `src/components/BookApp.tsx` — orchestrator: all server state, phases, autosave, presence loop, sweepers.
+- `src/components/BookApp.tsx` — orchestrator: most server state, phases, autosave, presence loop, sweepers.
 - `src/components/book/BookStage.tsx` — 3D rig: single rAF loop, flips, riffle, zoom, drag-to-turn.
 - `src/components/book/PageFace.tsx` — one writable ruled page (sanitize, toolbar portal, pin/remove/+).
 - `src/components/book/{SearchBar,NotesPanel,IndexPanel,FloatingEditorToolbar}.tsx` — search, per-page notes, index drawer, format toolbar.
@@ -60,7 +60,7 @@ flowchart LR
 - `src/components/IdentityGate.tsx` — name+PIN claim/verify or direct continue (no accounts).
 - `src/app/health|storage|dashboard/page.tsx` — observability dashboards (health+presence+quota; telemetry+snapshot controls; alias).
 - `src/app/api/**/route.ts` — ~20 routes: book, pages, notes, board, search, presence, identity, backup, storage, health.
-- `src/lib/turso.ts` — backup-engine front (name is historical): snapshots, LWW restore, shift/failover, replication queue, merged reads. Talks CockroachDB.
+- `src/lib/backup-engine.ts` — dual-engine front (formerly `turso.ts`): snapshots, LWW restore, shift/failover, replication queue, merged reads. Talks CockroachDB.
 - `src/lib/{db,db-backup,users-db}.ts` — Prisma singletons (books/notes clusters, CockroachDB, users cluster), cached on `globalThis`.
 - `src/lib/usrinfo.ts` — identities, presence, page leases on the users cluster.
 - `src/lib/{auth,rate-limit,csrf,sanitize,logger,identity*}.ts` — gates, limits, XSS allowlist, audit log, name/PIN rules + crypto split.
@@ -81,12 +81,14 @@ flowchart LR
 ```mermaid
 flowchart TD
     BA[BookApp: state + phases] -->|props| BS[BookStage: 3D]
-    BA -->|props| BV[BoardView]
-    BA -->|props| PN[Panels / Toolbar]
+    BA -->|props: open/onClose only| BV[BoardView]
+    BA -->|props: page/open only| PN[Panels / Toolbar]
     BS -->|props| PF[PageFace]
     PF -->|callbacks| BA
     BV & PN & BS -->|callbacks| BA
     BA -->|fetch| API[API routes]
+    BV -->|fetch own lists| API
+    PN -->|fetch own lists| API
     API --> LIB[lib: auth/limit/sanitize]
     API --> DB[(TiDB A/B/C)]
     API --> CB[(CockroachDB)]
@@ -108,7 +110,7 @@ flowchart TD
 - **Tombstones, never hard deletes** — pages park at negative numbers; restore is last-write-wins with stale/tombstone skips; only explicit `prune` truly deletes.
 - **Optimistic UI + draft ownership** — `pendingEdits` survive server refetches; flush guards stop page-A text landing on page B.
 - **Measured, not fabricated telemetry** — content bytes via SQL sums, `bytesMeasured` flags, quotas labeled with source (`*_QUOTA_BYTES` overrides).
-- **Defense in layers** — CSRF middleware → limit-before-auth → allowlist sanitizer (server+client mirrors) → CSP headers → confirm-gated destructives.
+- **Defense in layers** — CSRF middleware → auth/limit per-route order → allowlist sanitizer (server+client mirrors) → CSP headers → confirm-gated destructives.
 - **Singletons on `globalThis`** — one Prisma pool per engine across hot reloads/serverless workers.
-- **No fossil naming** — the old `turso.ts`/Turso-DB names were migrated to `backup-engine.ts` + `backup*` exports end to end (routes, scripts, tests, docs), so names match the CockroachDB reality.
+- **No fossil naming in code paths** — live code is `backup-engine.ts` + `backup*` exports; `Turso` survives only in comments, log-engine labels, and dead env vars.
 - **Scripts are live-DB probes, tests are DB-free** — `npm test` never touches a database.
