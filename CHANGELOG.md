@@ -1,9 +1,8 @@
 # Libris Changelog
 
-> Complete version history of the 3D Book Notes app. A new version only for a
-> meaningful change batch — never one-line tweaks. `1.x` = foundation,
-> `2.x` = identity + engine migration + honest telemetry,
-> `3.x` = naming cleanup + polish + deploy hardening.
+> Complete version history of the 3D Book Notes app. One minor version per
+> change batch, all under 1.x — no inflated majors. Versions are only added
+> when something actually changed.
 
 ---
 
@@ -120,7 +119,7 @@
 
 ---
 
-## 2.0 — Identity + presence
+## 1.10 — Identity + presence
 
 ### Added
 - Typed display names with 4–8 digit PIN claim/verify (continuity across cleared browsers, not auth).
@@ -131,7 +130,7 @@
 
 ---
 
-## 2.1 — CockroachDB replaces Turso backup
+## 1.11 — CockroachDB replaces Turso backup
 
 ### Added
 - Snapshots, restore source, shift overflow, replication mirror, activity logs moved to CockroachDB (`BACKUP_DATABASE_URL`, `prisma/schema-backup.prisma`).
@@ -143,7 +142,7 @@
 
 ---
 
-## 2.2 — Users move to TiDB, Turso fully out
+## 1.12 — Users move to TiDB, Turso fully out
 
 ### Added
 - Identities/presence/leases migrate to a third TiDB cluster (`users_db`: `identities`, `presence`, `page_locks`), DDL applied by hand (Prisma + TiDB both refuse a DB literally named `sys`).
@@ -154,7 +153,7 @@
 
 ---
 
-## 2.3 — Real-data telemetry
+## 1.13 — Real-data telemetry
 
 ### Added
 - Measured content bytes everywhere (`octet_length`/`LENGTH` sums + per-row allowance) — the old `rows × 1024` estimate deleted.
@@ -164,7 +163,7 @@
 
 ---
 
-## 2.4 — Live/tombstone splits + divergence
+## 1.14 — Live/tombstone splits + divergence
 
 ### Added
 - Every table count reports `live` vs `tombstoned` in `/api/storage` (e.g. 14 pages = 7 live + 7 tombstoned).
@@ -173,7 +172,7 @@
 
 ---
 
-## 2.5 — Front-cover life
+## 1.15 — Front-cover life
 
 ### Added
 - Meta pill shows live page count plus margin + sticky note counts (board count fetched up front).
@@ -186,7 +185,7 @@
 
 ---
 
-## 2.6 — Gate + link fixes
+## 1.16 — Gate + link fixes
 
 ### Added
 - Gate inputs restyled for the dark dialog (previous ink-on-paper class was invisible).
@@ -198,7 +197,7 @@
 
 ---
 
-## 2.7 — Deploy pipeline
+## 1.17 — Deploy pipeline + dashboard route
 
 ### Added
 - `vercel-build` + `postinstall` generate all 4 Prisma clients (fresh deploys no longer crash on a missing client); `db:push:backup` script.
@@ -207,7 +206,7 @@
 
 ---
 
-## 2.8 — Quota corrections
+## 1.18 — Quota corrections
 
 ### Changed
 - CockroachDB Basic free corrected to **10 GiB** (verified against official pricing + docs; was a stale 5).
@@ -216,7 +215,7 @@
 
 ---
 
-## 2.9 — Status + inventory honesty
+## 1.19 — Status + inventory honesty
 
 ### Added
 - Status pills turn red on offline/unreachable, amber when unconfigured, with the real status text.
@@ -225,7 +224,7 @@
 
 ---
 
-## 3.0 — Backup-engine rename
+## 1.20 — Backup-engine rename
 
 ### Changed
 - `src/lib/turso.ts` → `src/lib/backup-engine.ts`; ~30 exports renamed (`snapshotToBackup`, `restoreFromBackup`, `createBackupPage`, …).
@@ -238,7 +237,7 @@
 
 ---
 
-## 3.1 — Silent builds + lean deps
+## 1.21 — Silent builds + lean deps
 
 ### Added
 - `prisma/patch-prisma-turbopack-ignore.mjs` re-applies `turbopackIgnore` markers after every generate — 8 → 0 file-tracing warnings (lives in `prisma/` because `.vercelignore` excludes `scripts/`).
@@ -249,5 +248,3 @@
 
 ### Fixed
 - Deploys failed twice shipping this: missing script on Vercel (`Cannot find module …/scripts/…`) — fixed by the move; then a strict exit code — fixed by non-fatal.
-
----
